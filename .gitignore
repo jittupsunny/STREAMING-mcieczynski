@@ -1,0 +1,8 @@
+**.idea
+botgen/logs
+bot-detector/.idea
+bot-detector/derby.log
+bot-detector/metastore_db
+**/target
+**.DS_Store
+zk-multiple-kafka-multiple

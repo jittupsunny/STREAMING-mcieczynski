@@ -15,28 +15,20 @@ case class Event(uuid: UUID, timestamp: Long, categoryId: Int, ip: String, event
 
 case class InvalidEvent(originalMessage: String, exception: Throwable)
 
-case class SimpleEvent(timestamp: Long, categoryId: Int, eventType: String)
+case class SimpleEvent(uuid: UUID, timestamp: Long, categoryId: Int, eventType: String)
 
 case class AggregatedIpInformation(ip: String, currentEvents: List[SimpleEvent] = List.empty) {
-  val botDetected: Boolean = currentEvents.size > REQUEST_LIMIT ||
-    (currentEvents.map(event => event.categoryId).distinct.count(_ => true) >= CATEGORY_TYPE_LIMIT) || {
+  val botDetected: Option[String] = if (currentEvents.size > REQUEST_LIMIT) Option(REQUESTS)
+  else if (currentEvents.map(event => event.categoryId).distinct.count(_ => true) >= CATEGORY_TYPE_LIMIT) Option(CATEGORIES)
+  else {
     val countMap = currentEvents.groupBy(event => event.eventType).mapValues(eventList => eventList.size)
     val clickCount = countMap.getOrElse("click", 0)
     val viewCount = countMap.getOrElse("view", 0)
-    clickCount > 0 && (viewCount == 0 || clickCount / viewCount >= BOT_RATIO_LIMIT)
+    if (clickCount > 0 && viewCount > 0 && (clickCount / viewCount >= BOT_RATIO_LIMIT)) Option(RATIO) else Option.empty
   }
 }
 
-//////////////////////
-
-case class AggregatedEventsCount(clicks: Double, views: Double) {
-  val clickViewRatio: Double = if (views > 0) clicks / views else BOT_RATIO_LIMIT
-}
-
-case class EvaluatedEvent(baseEvent: Event, isNormalUser: Boolean)
-
-
-case class IpEvents(ip: String, clicks: Int, views: Int)
+case class DetectedBot(ip: String, timestamp: Long, reason: String)
 
 object DetectorService {
 
@@ -82,31 +74,27 @@ object DetectorService {
           (events, otherEvents) => events diff otherEvents,
           Seconds(TIME_WINDOW_LIMIT), Seconds(SLIDE_DURATION))
         .mapWithState(
-          StateSpec.function((_: String, newEventsOpt: Option[List[Event]], aggregatedEvents: State[AggregatedEventsCount]) => {
+          StateSpec.function((ip: String, newEventsOpt: Option[List[Event]], aggregatedIpInformation: State[AggregatedIpInformation]) => {
             val newEvents = newEventsOpt.getOrElse(List.empty[Event])
-            val newAggregatedEvents = newEvents.foldLeft((0.0, 0.0))((eventsAggregator, event) =>
-              event.eventType match {
-                case "click" => (eventsAggregator._1 + 1, eventsAggregator._2)
-                case "view" => (eventsAggregator._1, eventsAggregator._2 + 1)
-                case _ => (eventsAggregator._1, eventsAggregator._2)
-              })
-            val calculatedAggregator = AggregatedEventsCount(newAggregatedEvents._1, newAggregatedEvents._2)
-            aggregatedEvents.update(
-              aggregatedEvents.getOption() match {
-                case Some(aggregatedData) => AggregatedEventsCount(aggregatedData.clicks + calculatedAggregator.clicks,
-                  aggregatedData.views + calculatedAggregator.views)
-                case None => calculatedAggregator
+            val newAggregatedIpInformation = AggregatedIpInformation(ip, newEvents.map(simplifyEvent))
+
+            aggregatedIpInformation.update(
+              aggregatedIpInformation.getOption() match {
+                case Some(aggregatedData) => {
+                  val validEvents = aggregatedData.currentEvents.filter(event => event.timestamp < (System.currentTimeMillis() / 1000))
+                  AggregatedIpInformation(ip, (validEvents ++ newAggregatedIpInformation.currentEvents).distinct)
+                }
+                case None => newAggregatedIpInformation
               }
             )
-            newEvents.map(event => EvaluatedEvent(event, aggregatedEvents.getOption()
-              .map(_.clickViewRatio).getOrElse(BOT_RATIO_LIMIT) <= 5))
           })
         )
         .stateSnapshots()
-        .map(ip_data => IpEvents(ip_data._1, ip_data._2.clicks.toInt, ip_data._2.views.toInt))
+        .filter(aggregatedIpInformation => aggregatedIpInformation._2.botDetected.nonEmpty)
+        .map(aggregatedIpInformation => DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
         .foreachRDD(rdd => {
           rdd.foreach(println)
-          rdd.saveToCassandra("bot_detection", "ip_log", AllColumns)
+          rdd.saveToCassandra("bot_detection", "detected_bots", AllColumns)
         })
 
       println("Finished setting up the context")
@@ -116,6 +104,10 @@ object DetectorService {
 
     streamingContext.start
     streamingContext.awaitTermination
+  }
+
+  def simplifyEvent(event: Event): SimpleEvent = {
+    SimpleEvent(event.uuid, event.timestamp, event.categoryId, event.eventType)
   }
 
   def tryEventConversion(jsonEvent: String): Either[InvalidEvent, Event] = {

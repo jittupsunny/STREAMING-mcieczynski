@@ -17,6 +17,12 @@ public interface DetectorConstants {
 
     long BATCH_DURATION = 60 / timeRatio;
 
-    long SLIDE_DURATION = 30 / timeRatio;
+    long SLIDE_DURATION = 600 / timeRatio;
+
+    String REQUESTS = "requests";
+
+    String CATEGORIES = "categories";
+
+    String RATIO = "ratio";
 
 }

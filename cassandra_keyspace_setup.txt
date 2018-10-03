@@ -1,2 +1,3 @@
-CREATE KEYSPACE bot_detection WITH replication = {'class':'SimpleStrategy','replication_factor':2};
+CREATE KEYSPACE bot_detection WITH replication = {'class':'SimpleStrategy','replication_factor':1};
 CREATE TABLE bot_detection.events (uuid text, timestamp bigint, category_id int, ip text, event_type text, PRIMARY KEY(uuid));
+CREATE TABLE bot_detection.ip_log (ip text, clicks int, views int, PRIMARY KEY(ip));

@@ -2,7 +2,7 @@ package pl.mcieszynski.gridu.detector;
 
 public interface DetectorConstants {
 
-    int timeRatio = 10;
+    int timeRatio = 1;
 
     int BOT_RATIO_LIMIT = 5;
 

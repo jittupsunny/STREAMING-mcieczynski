@@ -3,6 +3,7 @@ package pl.mcieszynski.gridu.detector
 import java.util.UUID
 
 import com.datastax.spark.connector._
+import org.apache.ignite.spark.{IgniteContext, IgniteRDD}
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.streaming._
@@ -11,15 +12,25 @@ import pl.mcieszynski.gridu.detector.DetectorConstants._
 
 import scala.util.{Either, Left, Right}
 
-case class Event(uuid: UUID, timestamp: Long, categoryId: Int, ip: String, eventType: String)
+trait BaseEvent {
+  def uuid: UUID
+
+  def timestamp: Long
+
+  def categoryId: Int
+
+  def eventType: String
+}
+
+case class SimpleEvent(uuid: UUID, timestamp: Long, categoryId: Int, eventType: String) extends BaseEvent
+
+case class Event(uuid: UUID, timestamp: Long, categoryId: Int, ip: String, eventType: String) extends BaseEvent
 
 case class InvalidEvent(originalMessage: String, exception: Throwable)
 
-case class SimpleEvent(uuid: UUID, timestamp: Long, categoryId: Int, eventType: String)
-
 case class AggregatedIpInformation(ip: String, currentEvents: List[SimpleEvent] = List.empty) {
   val botDetected: Option[String] = if (currentEvents.size > REQUEST_LIMIT) Option(REQUESTS)
-  else if (currentEvents.map(event => event.categoryId).distinct.count(_ => true) >= CATEGORY_TYPE_LIMIT) Option(CATEGORIES)
+  else if (currentEvents.map(event => event.categoryId).distinct.count(_ => true) > CATEGORY_TYPE_LIMIT) Option(CATEGORIES)
   else {
     val countMap = currentEvents.groupBy(event => event.eventType).mapValues(eventList => eventList.size)
     val clickCount = countMap.getOrElse("click", 0)
@@ -40,6 +51,8 @@ object DetectorService {
 
   val bootstrapServers = "localhost:9092,localhost:9093,localhost:9094"
 
+  val expiredEventsPredicate: BaseEvent => Boolean = event => event.timestamp > (System.currentTimeMillis() / 1000) - TIME_WINDOW_LIMIT
+
   def main(args: Array[String]) {
     val spark = SparkSession.builder
       .master("local[3]")
@@ -58,17 +71,23 @@ object DetectorService {
       "enable.auto.commit" -> (false: java.lang.Boolean)
     )
 
-    val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
+    val ic = new IgniteContext(spark.sparkContext, "file:////Users/mcieszynski/prg/code/final-project/ignite_configuration.xml")
 
+    val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
     val streamingContext = StreamingContext.getOrCreate(checkpointPath = checkpointDir, creatingFunc = () => {
       val ssc = new StreamingContext(spark.sparkContext, Seconds(BATCH_DURATION))
       val kafkaStream = KafkaUtils.createDirectStream(ssc, LocationStrategies.PreferConsistent, consumerStrategy)
+      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = ic.fromCache("sharedRDD")
+      sharedRDD.foreach(println)
+
       val flatMap = kafkaStream.map(consumerRecord => tryEventConversion(consumerRecord.value()))
         .flatMap(_.right.toOption)
       flatMap.foreachRDD(rdd =>
         rdd.saveToCassandra("bot_detection", "events",
           SomeColumns("uuid", "timestamp", "category_id", "ip", "event_type")))
-      flatMap.map(event => (event.ip, event))
+      val detectedBots = flatMap
+        .filter(expiredEventsPredicate)
+        .map(event => (event.ip, event))
         .mapValues(event => List(event))
         .reduceByKeyAndWindow((events, otherEvents) => events ++ otherEvents,
           (events, otherEvents) => events diff otherEvents,
@@ -81,7 +100,7 @@ object DetectorService {
             aggregatedIpInformation.update(
               aggregatedIpInformation.getOption() match {
                 case Some(aggregatedData) => {
-                  val validEvents = aggregatedData.currentEvents.filter(event => event.timestamp < (System.currentTimeMillis() / 1000))
+                  val validEvents = aggregatedData.currentEvents.filter(expiredEventsPredicate)
                   AggregatedIpInformation(ip, (validEvents ++ newAggregatedIpInformation.currentEvents).distinct)
                 }
                 case None => newAggregatedIpInformation
@@ -91,7 +110,9 @@ object DetectorService {
         )
         .stateSnapshots()
         .filter(aggregatedIpInformation => aggregatedIpInformation._2.botDetected.nonEmpty)
-        .map(aggregatedIpInformation => DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
+      detectedBots.foreachRDD(detectedBotsRDD => sharedRDD.savePairs(detectedBotsRDD))
+
+      detectedBots.map(aggregatedIpInformation => DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
         .foreachRDD(rdd => {
           rdd.foreach(println)
           rdd.saveToCassandra("bot_detection", "detected_bots", AllColumns)

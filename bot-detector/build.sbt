@@ -11,17 +11,9 @@ sparkComponents ++= Seq("sql", "catalyst", "streaming")
 
 spDependencies += "datastax/spark-cassandra-connector:2.3.1-s_2.11"
 
-//libraryDependencies += "org.apache.spark" %% "spark-core" % "2.3.1" % "provided"
-//
-//libraryDependencies += "org.apache.spark" %% "spark-sql" % "2.3.1" % "provided"
-//
-//libraryDependencies += "org.apache.spark" %% "spark-streaming" % "2.3.1" % "provided"
-//
-//libraryDependencies += "org.apache.spark" %% "spark-catalyst" % "2.3.1" % "provided"
-//
-//libraryDependencies += "com.datastax.spark" %% "spark-cassandra-connector" % "2.3.1"
-
 libraryDependencies += "org.apache.spark" %% "spark-streaming-kafka-0-10" % "2.3.1"
+
+libraryDependencies += "org.apache.ignite" % "ignite-spark" % "2.6.0"
 
 libraryDependencies += "net.liftweb" %% "lift-json" % "2.6-M4"
 

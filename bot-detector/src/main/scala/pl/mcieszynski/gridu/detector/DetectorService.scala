@@ -78,15 +78,16 @@ object DetectorService {
       val ssc = new StreamingContext(spark.sparkContext, Seconds(BATCH_DURATION))
       val kafkaStream = KafkaUtils.createDirectStream(ssc, LocationStrategies.PreferConsistent, consumerStrategy)
       val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = ic.fromCache("sharedRDD")
-      sharedRDD.foreach(println)
 
+      val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
       val flatMap = kafkaStream.map(consumerRecord => tryEventConversion(consumerRecord.value()))
         .flatMap(_.right.toOption)
+
       flatMap.foreachRDD(rdd =>
         rdd.saveToCassandra("bot_detection", "events",
           SomeColumns("uuid", "timestamp", "category_id", "ip", "event_type")))
       val detectedBots = flatMap
-        .filter(expiredEventsPredicate)
+        .filter(event => !previouslyDetectedBotIps.contains(event.ip)) // Filter bot-confirmed events from further processing
         .map(event => (event.ip, event))
         .mapValues(event => List(event))
         .reduceByKeyAndWindow((events, otherEvents) => events ++ otherEvents,
@@ -96,12 +97,10 @@ object DetectorService {
           StateSpec.function((ip: String, newEventsOpt: Option[List[Event]], aggregatedIpInformation: State[AggregatedIpInformation]) => {
             val newEvents = newEventsOpt.getOrElse(List.empty[Event])
             val newAggregatedIpInformation = AggregatedIpInformation(ip, newEvents.map(simplifyEvent))
-
             aggregatedIpInformation.update(
               aggregatedIpInformation.getOption() match {
                 case Some(aggregatedData) => {
-                  val validEvents = aggregatedData.currentEvents.filter(expiredEventsPredicate)
-                  AggregatedIpInformation(ip, (validEvents ++ newAggregatedIpInformation.currentEvents).distinct)
+                  AggregatedIpInformation(ip, (aggregatedData.currentEvents ++ newAggregatedIpInformation.currentEvents).distinct)
                 }
                 case None => newAggregatedIpInformation
               }
@@ -145,7 +144,7 @@ object DetectorService {
       Right(event)
     } catch {
       case NonFatal(exception: Exception) => {
-        println("Invalid event:", exception)
+        println("Invalid event:", jsonEvent, exception)
         Left(InvalidEvent(jsonEvent, exception))
       }
     }

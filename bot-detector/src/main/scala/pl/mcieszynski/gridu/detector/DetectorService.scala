@@ -2,141 +2,73 @@ package pl.mcieszynski.gridu.detector
 
 import java.util.UUID
 
-import com.datastax.spark.connector._
-import org.apache.ignite.spark.{IgniteContext, IgniteRDD}
-import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.ignite.spark.IgniteContext
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka010._
-import pl.mcieszynski.gridu.detector.DetectorConstants._
+import pl.mcieszynski.gridu.detector.events.{BaseEvent, Event, InvalidEvent, SimpleEvent}
 
 import scala.util.{Either, Left, Right}
 
-trait BaseEvent {
-  def uuid: UUID
+trait DetectorService {
 
-  def timestamp: Long
+  val timeRatio = 1
 
-  def categoryId: Int
+  val BOT_RATIO_LIMIT = 5
 
-  def eventType: String
-}
+  val REQUEST_LIMIT: Int = 1000 / timeRatio
 
-case class SimpleEvent(uuid: UUID, timestamp: Long, categoryId: Int, eventType: String) extends BaseEvent
+  val CATEGORY_TYPE_LIMIT = 5
 
-case class Event(uuid: UUID, timestamp: Long, categoryId: Int, ip: String, eventType: String) extends BaseEvent
+  /**
+    * all times in seconds
+    */
+  val TIME_WINDOW_LIMIT: Long = 600 / timeRatio
 
-case class InvalidEvent(originalMessage: String, exception: Throwable)
+  val BATCH_DURATION: Long = 60 / timeRatio
 
-case class AggregatedIpInformation(ip: String, currentEvents: List[SimpleEvent] = List.empty) {
-  val botDetected: Option[String] = if (currentEvents.size > REQUEST_LIMIT) Option(REQUESTS)
-  else if (currentEvents.map(event => event.categoryId).distinct.count(_ => true) > CATEGORY_TYPE_LIMIT) Option(CATEGORIES)
-  else {
-    val countMap = currentEvents.groupBy(event => event.eventType).mapValues(eventList => eventList.size)
-    val clickCount = countMap.getOrElse("click", 0)
-    val viewCount = countMap.getOrElse("view", 0)
-    if (clickCount > 0 && viewCount > 0 && (clickCount / viewCount >= BOT_RATIO_LIMIT)) Option(RATIO) else Option.empty
-  }
-}
+  val SLIDE_DURATION: Long = 600 / timeRatio
 
-case class DetectedBot(ip: String, timestamp: Long, reason: String)
+  val REQUESTS = "requests"
 
-object DetectorService {
+  val CATEGORIES = "categories"
+
+  val RATIO = "ratio"
 
   val kafkaTopic = "events"
 
   val kafkaGroup = "bot-detection"
 
-  val checkpointDir = "file:////Users/mcieszynski/prg/data/spark/bot-detection-checkpoint"
-
   val bootstrapServers = "localhost:9092,localhost:9093,localhost:9094"
+
+  val checkpointDir = "file:////Users/mcieszynski/prg/data/spark/bot-detection-checkpoint"
 
   val expiredEventsPredicate: BaseEvent => Boolean = event => event.timestamp > (System.currentTimeMillis() / 1000) - TIME_WINDOW_LIMIT
 
-  def main(args: Array[String]) {
-    val spark = SparkSession.builder
-      .master("local[3]")
-      .appName("Bot Detector")
-      .config("spark.driver.memory", "2g")
-      .config("spark.cassandra.connection.host", "localhost")
-      .enableHiveSupport
-      .getOrCreate()
-
-    val kafkaParams = Map[String, Object](
-      "bootstrap.servers" -> bootstrapServers,
-      "key.deserializer" -> classOf[StringDeserializer],
-      "value.deserializer" -> classOf[StringDeserializer],
-      "group.id" -> kafkaGroup,
-      "auto.offset.reset" -> "earliest",
-      "enable.auto.commit" -> (false: java.lang.Boolean)
-    )
-
-    val ic = new IgniteContext(spark.sparkContext, "file:////Users/mcieszynski/prg/code/final-project/ignite_configuration.xml")
-
-    val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
-    val streamingContext = StreamingContext.getOrCreate(checkpointPath = checkpointDir, creatingFunc = () => {
-      val ssc = new StreamingContext(spark.sparkContext, Seconds(BATCH_DURATION))
-      val kafkaStream = KafkaUtils.createDirectStream(ssc, LocationStrategies.PreferConsistent, consumerStrategy)
-      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = ic.fromCache("sharedRDD")
-
-      val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
-      val flatMap = kafkaStream.map(consumerRecord => tryEventConversion(consumerRecord.value()))
-        .flatMap(_.right.toOption)
-
-      flatMap.foreachRDD(rdd =>
-        rdd.saveToCassandra("bot_detection", "events",
-          SomeColumns("uuid", "timestamp", "category_id", "ip", "event_type")))
-      val detectedBots = flatMap
-        .filter(event => !previouslyDetectedBotIps.contains(event.ip)) // Filter bot-confirmed events from further processing
-        .map(event => (event.ip, event))
-        .mapValues(event => List(event))
-        .reduceByKeyAndWindow((events, otherEvents) => events ++ otherEvents,
-          (events, otherEvents) => events diff otherEvents,
-          Seconds(TIME_WINDOW_LIMIT), Seconds(SLIDE_DURATION))
-        .mapWithState(
-          StateSpec.function((ip: String, newEventsOpt: Option[List[Event]], aggregatedIpInformation: State[AggregatedIpInformation]) => {
-            val newEvents = newEventsOpt.getOrElse(List.empty[Event])
-            val newAggregatedIpInformation = AggregatedIpInformation(ip, newEvents.map(simplifyEvent))
-            aggregatedIpInformation.update(
-              aggregatedIpInformation.getOption() match {
-                case Some(aggregatedData) => {
-                  AggregatedIpInformation(ip, (aggregatedData.currentEvents ++ newAggregatedIpInformation.currentEvents).distinct)
-                }
-                case None => newAggregatedIpInformation
-              }
-            )
-          })
-        )
-        .stateSnapshots()
-        .filter(aggregatedIpInformation => aggregatedIpInformation._2.botDetected.nonEmpty)
-      detectedBots.foreachRDD(detectedBotsRDD => sharedRDD.savePairs(detectedBotsRDD))
-
-      detectedBots.map(aggregatedIpInformation => DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
-        .foreachRDD(rdd => {
-          rdd.foreach(println)
-          rdd.saveToCassandra("bot_detection", "detected_bots", AllColumns)
-        })
-
-      println("Finished setting up the context")
-      ssc.checkpoint(checkpointDir)
-      ssc
-    })
-
-    streamingContext.start
-    streamingContext.awaitTermination
+  case class AggregatedIpInformation(ip: String, currentEvents: List[SimpleEvent] = List.empty) {
+    val botDetected: Option[String] = if (currentEvents.size > REQUEST_LIMIT) Option(REQUESTS)
+    else if (currentEvents.map(event => event.categoryId).distinct.count(_ => true) > CATEGORY_TYPE_LIMIT) Option(CATEGORIES)
+    else {
+      val countMap = currentEvents.groupBy(event => event.eventType).mapValues(eventList => eventList.size)
+      val clickCount = countMap.getOrElse("click", 0)
+      val viewCount = countMap.getOrElse("view", 0)
+      if (clickCount > 0 && viewCount > 0 && (clickCount / viewCount >= BOT_RATIO_LIMIT)) Option(RATIO) else Option.empty
+    }
   }
+
+  case class DetectedBot(ip: String, timestamp: Long, reason: String)
+
 
   def simplifyEvent(event: Event): SimpleEvent = {
     SimpleEvent(event.uuid, event.timestamp, event.categoryId, event.eventType)
   }
 
-  def tryEventConversion(jsonEvent: String): Either[InvalidEvent, Event] = {
+  def tryEventConversion(kafkaMessageUUID: String, jsonEvent: String): Either[InvalidEvent, Event] = {
     import net.liftweb.json._
 
     import scala.util.control.NonFatal
     try {
       val jsonMap = parse(jsonEvent).asInstanceOf[JObject].values
-      val event = Event(UUID.nameUUIDFromBytes(jsonEvent.getBytes()),
+      val event = Event(UUID.nameUUIDFromBytes(kafkaMessageUUID.getBytes()),
         jsonMap("unix_time").asInstanceOf[BigInt].toLong,
         jsonMap("category_id").asInstanceOf[BigInt].toInt,
         jsonMap("ip").asInstanceOf[String],
@@ -148,5 +80,27 @@ object DetectorService {
         Left(InvalidEvent(jsonEvent, exception))
       }
     }
+  }
+
+  def sparkSetup = {
+    SparkSession.builder
+      .master("local[3]")
+      .appName("Bot Detector")
+      .config("spark.driver.memory", "2g")
+      .config("spark.cassandra.connection.host", "localhost")
+      .enableHiveSupport
+      .getOrCreate()
+  }
+
+
+  def igniteSetup(sparkSession: SparkSession, configPath: String = "file:////Users/mcieszynski/prg/code/final-project/ignite_configuration.xml") = {
+    new IgniteContext(sparkSession.sparkContext, configPath)
+  }
+
+
+  def kafkaSetup(): Map[String, Object]
+
+  def kafkaMessageUUID(record: ConsumerRecord[String, String]): String = {
+    record.topic() + "_" + record.partition() + "_" + record.offset()
   }
 }

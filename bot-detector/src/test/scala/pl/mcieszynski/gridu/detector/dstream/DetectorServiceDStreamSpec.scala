@@ -1,4 +1,4 @@
-package pl.mcieszynski.gridu.detector
+package pl.mcieszynski.gridu.detector.dstream
 
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
 import org.apache.spark.sql.SparkSession
@@ -7,6 +7,7 @@ import org.apache.spark.streaming.kafka010.{ConsumerStrategies, ConsumerStrategy
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.scalatest.mockito.MockitoSugar
 import org.scalatest.{BeforeAndAfterAll, WordSpec}
+import pl.mcieszynski.gridu.detector.DetectorServiceDStream
 
 class DetectorServiceDStreamSpec extends WordSpec with BeforeAndAfterAll with EmbeddedKafka with MockitoSugar {
   lazy val sparkSession: SparkSession = SparkSession

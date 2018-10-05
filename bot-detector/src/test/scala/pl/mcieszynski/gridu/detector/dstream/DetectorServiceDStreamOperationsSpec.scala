@@ -1,26 +1,14 @@
-package pl.mcieszynski.gridu.detector
+package pl.mcieszynski.gridu.detector.dstream
 
 import java.util.UUID
 
 import com.holdenkarau.spark.testing.StreamingSuiteBase
 import net.manub.embeddedkafka.EmbeddedKafka
 import org.scalatest.WordSpec
+import pl.mcieszynski.gridu.detector.{DetectorServiceDStream, DetectorServiceTestConstants}
 import pl.mcieszynski.gridu.detector.events.Event
 
-class DetectorServiceDStreamOperationsSpec extends WordSpec with StreamingSuiteBase with EmbeddedKafka {
-
-  val kafkaMessageUUID = "topic_partitionId_offsetId"
-
-  val timestamp = 1538648621
-
-  val categoryId = 1005
-
-  val ip = "172.10.13.247"
-
-  val eventType = "view"
-
-  val validEventJson = "{\"unix_time\": " + 1538648621 + ", \"category_id\": " + categoryId +
-    ", \"ip\": \"" + ip + "\", \"type\": \"" + eventType + "\"}"
+class DetectorServiceDStreamOperationsSpec extends WordSpec with DetectorServiceTestConstants with StreamingSuiteBase with EmbeddedKafka {
 
   "DetectorService" should {
     "convertValidEvents" in {

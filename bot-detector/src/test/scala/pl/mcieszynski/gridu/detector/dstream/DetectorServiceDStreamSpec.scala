@@ -2,9 +2,8 @@ package pl.mcieszynski.gridu.detector.dstream
 
 import net.manub.embeddedkafka.{EmbeddedKafka, EmbeddedKafkaConfig}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.Seconds
 import org.apache.spark.streaming.kafka010.{ConsumerStrategies, ConsumerStrategy}
-import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.scalatest.mockito.MockitoSugar
 import org.scalatest.{BeforeAndAfterAll, WordSpec}
 import pl.mcieszynski.gridu.detector.DetectorServiceDStream
@@ -19,8 +18,6 @@ class DetectorServiceDStreamSpec extends WordSpec with BeforeAndAfterAll with Em
 
 
   val streamingService = DetectorServiceDStream
-  var ssc: StreamingContext = _
-  var dStream: DStream[(String, String)] = _
 
   val kafkaParams = DetectorServiceDStream.kafkaSetup()
   val topic = pl.mcieszynski.gridu.detector.DetectorServiceDStream.kafkaTopic
@@ -29,15 +26,13 @@ class DetectorServiceDStreamSpec extends WordSpec with BeforeAndAfterAll with Em
   try {
     EmbeddedKafka.start()(config)
     "DetectorService" should {
-      "create DStream" in {
+      "setup context and create DStream" in {
         withRunningKafka {
-          val (tmpSsc, tmpDStream) = streamingService.setupContextAndRetrieveDStream(sparkSession, consumerStrategy)
-          ssc = tmpSsc
-          dStream = tmpDStream
+          val (ssc, dStream) = streamingService.setupContextAndRetrieveDStream(sparkSession, consumerStrategy)
           assert(dStream.slideDuration == Seconds(DetectorServiceDStream.BATCH_DURATION))
+          assert(ssc != null)
         }
       }
-
     }
   }
   finally {

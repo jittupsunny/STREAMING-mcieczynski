@@ -62,7 +62,7 @@ type="java.util.concurrent.TimeUnit" value="MINUTES"/>
                 <property name="indexedTypes">
                     <list>
                         <value>java.lang.String</value>
-                        <value>pl.mcieszynski.gridu.detector.AggregatedIpInformation</value>
+                        <value>pl.mcieszynski.gridu.detector.events.AggregatedIpInformation</value>
                     </list>
                 </property>
                 <!-- Set atomicity mode. -->

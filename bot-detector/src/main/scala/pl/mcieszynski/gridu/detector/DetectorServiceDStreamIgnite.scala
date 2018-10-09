@@ -1,15 +1,17 @@
 package pl.mcieszynski.gridu.detector
 
 import java.lang
+import java.util.UUID
 
 import com.datastax.spark.connector._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.kafka010._
-import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, Event}
+import pl.mcieszynski.gridu.detector.events.{Event, IpInformation}
 
 object DetectorServiceDStream extends DetectorService {
 
@@ -32,23 +34,28 @@ object DetectorServiceDStream extends DetectorService {
     val kafkaParams = kafkaSetup
     val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
 
-
     val streamingContext = StreamingContext.getOrCreate(checkpointPath = checkpointDir, creatingFunc = () => {
       val (ssc, kafkaStream) = setupContextAndRetrieveDStream(sparkSession, consumerStrategy)
       val eventsMap = retrieveEventsDStream(kafkaStream)
 
       storeEventsInCassandra(eventsMap)
 
-      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, "botsRDD")
-      val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
+      val botsRDD: IgniteRDD[String, IpInformation] = retrieveIgniteCache(igniteContext, "botsRDD")
+      val eventsRDD: IgniteRDD[UUID, Event] = retrieveIgniteCache(igniteContext, "eventsRDD")
+
+      val previouslyDetectedBotIps = botsRDD.keys.distinct.collect
 
       val filteredEvents = filterKnownBotEvents(eventsMap, previouslyDetectedBotIps)
 
-      val eventsWithinTheWindow = reduceEventsInWindow(filteredEvents, previouslyDetectedBotIps)
+      val timestampWindow = System.currentTimeMillis() / 1000 - TIME_WINDOW_LIMIT
+      val inMemoryEvents = eventsRDD.map(pair => pair._2).filter(event => event.timestamp > timestampWindow).map(event => (event.ip, event)).mapValues(event => List(event))
 
-      val detectedBots = findNewBotsInWindow(eventsWithinTheWindow)
-
-      storeNewBots(detectedBots, sharedRDD)
+      filteredEvents.foreachRDD(rdd => {
+        val mergedRDD: RDD[(String, List[Event])] = joinCachedEvents(inMemoryEvents, rdd)
+        val (newBotsRDD: RDD[(String, IpInformation)], otherEventsRDD: RDD[(UUID, Event)]) = splitBotEvents(mergedRDD)
+        botsRDD.savePairs(newBotsRDD)
+        eventsRDD.savePairs(otherEventsRDD)
+      })
 
       println("Finished setting up the context")
       ssc.checkpoint(checkpointDir)
@@ -85,41 +92,28 @@ object DetectorServiceDStream extends DetectorService {
       .mapValues(event => List(event))
   }
 
-  def reduceEventsInWindow(eventsMap: DStream[(String, List[Event])], previouslyDetectedBotIps: Array[String]): DStream[(String, List[Event])] = {
-    eventsMap.reduceByKeyAndWindow((events, otherEvents) => (events ++ otherEvents).distinct,
-      (events, otherEvents) => events,
-      Seconds(TIME_WINDOW_LIMIT), Seconds(SLIDE_DURATION))
-  }
 
-  def resolveIpEventsState = {
-    (ip: String, newEventsOpt: Option[List[Event]], aggregatedIpInformation: State[AggregatedIpInformation]) => {
-      val newEvents = newEventsOpt.getOrElse(List.empty[Event])
-      val newAggregatedIpInformation = AggregatedIpInformation(ip, newEvents.map(simplifyEvent))
-      aggregatedIpInformation.update(
-        aggregatedIpInformation.getOption() match {
-          case Some(aggregatedData) => {
-            AggregatedIpInformation(ip, (aggregatedData.currentEvents ++ newAggregatedIpInformation.currentEvents).distinct)
-          }
-          case None => newAggregatedIpInformation
-        }
-      )
-    }
-  }
-
-  def findNewBotsInWindow(windowReducedEvents: DStream[(String, List[Event])]): DStream[(String, AggregatedIpInformation)] = {
-    windowReducedEvents.mapWithState(StateSpec.function(resolveIpEventsState))
-      .stateSnapshots()
-      .filter(aggregatedIpInformation => aggregatedIpInformation._2.botDetected.nonEmpty)
-  }
-
-  def storeNewBots(detectedBots: DStream[(String, AggregatedIpInformation)], sharedRDD: IgniteRDD[String, AggregatedIpInformation]) = {
-    detectedBots.foreachRDD(detectedBotsRDD => sharedRDD.savePairs(detectedBotsRDD))
-
-    detectedBots.map(aggregatedIpInformation => DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
-      .foreachRDD(rdd => {
-        rdd.foreach(println)
-        rdd.saveToCassandra("bot_detection", "detected_bots", AllColumns)
+  def joinCachedEvents(inMemoryEvents: RDD[(String, List[Event])], rdd: RDD[(String, List[Event])]) = {
+    val keys = rdd.keys.collect()
+    val mergedRDD = rdd.leftOuterJoin(inMemoryEvents.filter(pair => keys.contains(pair._1)))
+      .map(joinedEvents => {
+        val ip = joinedEvents._1
+        val events = joinedEvents._2._1
+        val cachedEvents = joinedEvents._2._2.getOrElse(List.empty)
+        (ip, events ++ cachedEvents)
       })
+    mergedRDD
   }
+
+  def splitBotEvents(mergedRDD: RDD[(String, List[Event])]) = {
+    val ipInformationRDD = mergedRDD.map(ipEvents => IpInformation(ipEvents._1, ipEvents._2))
+    val newBotsRDD = ipInformationRDD.filter(ipInformation => ipInformation.botDetected.nonEmpty)
+      .map(ipInformation => (ipInformation.ip, ipInformation))
+    val otherEventsRDD = ipInformationRDD.filter(ipInformation => ipInformation.botDetected.isEmpty)
+      .flatMap(ipInformation => ipInformation.currentEvents)
+      .map(event => (event.uuid, event))
+    (newBotsRDD, otherEventsRDD)
+  }
+
 
 }

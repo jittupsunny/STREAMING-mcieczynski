@@ -20,12 +20,12 @@ from datetime import datetime, timedelta
 
 # == generate content ids for bots and users
 # content ids [1000 .. 1020]
-bot_categories = [id for id in range(1000, 1020)]
+bot_categories = list(range(1000, 1020))
 # bot changes content twice as much as an user
 # Above should be false as: bot ==  e.g. more than 5 categories in 10 minutes.
 # Here we had users with 10 different categories...
 # content ids [1000, 1000 ..  1010, 1010]
-user_categories = bot_categories[id for id in range(1000,1005)]*4
+user_categories = list(range(1000, 1005))*4
 
 # these funtions return random content id for users, bots
 def random_content_user(): return random.choice(user_categories)

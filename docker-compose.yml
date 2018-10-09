@@ -220,3 +220,16 @@ services:
       - kafka2
       - kafka3
       - schema1
+
+  kafka-connect-ui:
+    image: landoop/kafka-connect-ui:0.9.4
+    hostname: kafka-connect-ui
+    ports:
+      - "8003:8000"
+    environment:
+      CONNECT_URL: "connect1:8091,connect2:8092,connect3:8093"
+      PROXY: "true"
+    depends_on:
+      - connect1
+      - connect2
+      - connect3

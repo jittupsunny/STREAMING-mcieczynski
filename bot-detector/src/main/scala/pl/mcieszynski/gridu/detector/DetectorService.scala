@@ -2,7 +2,7 @@ package pl.mcieszynski.gridu.detector
 
 import java.util.UUID
 
-import org.apache.ignite.spark.IgniteContext
+import org.apache.ignite.spark.{IgniteContext, IgniteRDD}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.sql.SparkSession
 import pl.mcieszynski.gridu.detector.events.{BaseEvent, Event, InvalidEvent, SimpleEvent}
@@ -33,6 +33,9 @@ trait DetectorService {
 
   case class DetectedBot(ip: String, timestamp: Long, reason: String)
 
+  def simplifyEvents(events: List[Event]): List[SimpleEvent] = {
+    events.map(event => simplifyEvent(event))
+  }
 
   def simplifyEvent(event: Event): SimpleEvent = {
     SimpleEvent(event.uuid, event.timestamp, event.categoryId, event.eventType)
@@ -79,4 +82,9 @@ trait DetectorService {
   def kafkaMessageUUID(record: ConsumerRecord[String, String]): String = {
     record.topic() + "_" + record.partition() + "_" + record.offset()
   }
+
+  def retrieveIgniteCache[K, V](igniteContext: IgniteContext, cacheName: String): IgniteRDD[K, V] = {
+    igniteContext.fromCache(cacheName)
+  }
+
 }

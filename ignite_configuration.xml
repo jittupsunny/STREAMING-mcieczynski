@@ -35,7 +35,7 @@
         http://www.springframework.org/schema/beans
         http://www.springframework.org/schema/beans/spring-beans.xsd">
 
-        <bean id="expiryPolicy"
+    <bean id="botsExpiryPolicy"
 class="javax.cache.configuration.FactoryBuilder$SingletonFactory">
         <constructor-arg>
             <bean class="javax.cache.expiry.CreatedExpiryPolicy">
@@ -50,31 +50,56 @@ type="java.util.concurrent.TimeUnit" value="MINUTES"/>
         </constructor-arg>
     </bean>
 
+    <bean id="eventsExpiryPolicy"
+class="javax.cache.configuration.FactoryBuilder$SingletonFactory">
+      <constructor-arg>
+          <bean class="javax.cache.expiry.CreatedExpiryPolicy">
+              <constructor-arg>
+                  <bean class="javax.cache.expiry.Duration">
+                      <constructor-arg
+  type="java.util.concurrent.TimeUnit" value="MINUTES"/>
+                      <constructor-arg value="10"/>
+                  </bean>
+              </constructor-arg>
+          </bean>
+      </constructor-arg>
+  </bean>
+
     <bean id="ignite.cfg" class="org.apache.ignite.configuration.IgniteConfiguration">
         <property name="cacheConfiguration">
-            <!-- SharedRDD cache example configuration (Atomic mode). -->
+          <list>
             <bean class="org.apache.ignite.configuration.CacheConfiguration">
-                <!-- Set a cache name. -->
-                <property name="name" value="sharedRDD"/>
-                <!-- Set a cache mode. -->
+                <property name="name" value="botsRDD"/>
                 <property name="cacheMode" value="REPLICATED"/>
-                <!-- Index Integer pairs used in the example. -->
                 <property name="indexedTypes">
                     <list>
                         <value>java.lang.String</value>
-                        <value>pl.mcieszynski.gridu.detector.events.AggregatedIpInformation</value>
+                        <value>pl.mcieszynski.gridu.detector.events.IpInformation</value>
                     </list>
                 </property>
-                <!-- Set atomicity mode. -->
                 <property name="atomicityMode" value="ATOMIC"/>
-
-                <!-- Cache expiration policy -->
                 <property name="expiryPolicyFactory">
-                    <bean parent="expiryPolicy"/>
+                    <bean parent="botsExpiryPolicy"/>
                 </property>
-
                 <property name="eagerTtl" value="true"/>
             </bean>
+
+            <bean class="org.apache.ignite.configuration.CacheConfiguration">
+                <property name="name" value="eventsRDD"/>
+                <property name="cacheMode" value="REPLICATED"/>
+                <property name="indexedTypes">
+                    <list>
+                      <value>java.util.UUID</value>
+                      <value>pl.mcieszynski.gridu.detector.events.Event</value>
+                    </list>
+                </property>
+                <property name="atomicityMode" value="ATOMIC"/>
+                <property name="expiryPolicyFactory">
+                    <bean parent="eventsExpiryPolicy"/>
+                </property>
+                <property name="eagerTtl" value="true"/>
+            </bean>
+          </list>
         </property>
 
         <!-- Explicitly configure TCP discovery SPI to provide list of initial nodes. -->

@@ -13,7 +13,7 @@ import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.kafka010._
 import pl.mcieszynski.gridu.detector.events.{Event, IpInformation}
 
-object DetectorServiceDStream extends DetectorService {
+object DetectorServiceDStreamIgnite extends DetectorService {
 
   def kafkaSetup() = {
     Map[String, Object](
@@ -27,7 +27,7 @@ object DetectorServiceDStream extends DetectorService {
   }
 
 
-  def main(args: Array[String]) {
+  def runService(args: Array[String]) {
     val sparkSession = sparkSetup
     val igniteContext = igniteSetup(sparkSession)
 

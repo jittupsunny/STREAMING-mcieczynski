@@ -6,3 +6,4 @@ bot-detector/metastore_db
 **/target
 **.DS_Store
 docker-data
+spark-checkpoint/*

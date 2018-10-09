@@ -20,16 +20,17 @@ object DetectorServiceDStream extends DetectorService {
       "value.deserializer" -> classOf[StringDeserializer],
       "group.id" -> kafkaGroup,
       "auto.offset.reset" -> "earliest",
-      "enable.auto.commit" -> (false: lang.Boolean)
+      "enable.auto.commit" -> (false: lang.Boolean),
+      "spark.streaming.backpressure.initialRate" -> (200000: lang.Integer)
     )
   }
 
 
-  def main(args: Array[String]) {
+  def runService(args: Array[String]) {
     val sparkSession = sparkSetup
     val igniteContext = igniteSetup(sparkSession)
 
-    val kafkaParams = kafkaSetup
+    val kafkaParams = kafkaSetup()
     val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
 
 
@@ -39,7 +40,7 @@ object DetectorServiceDStream extends DetectorService {
 
       storeEventsInCassandra(eventsMap)
 
-      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, "botsRDD")
+      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, "sharedRDD")
       val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
 
       val filteredEvents = filterKnownBotEvents(eventsMap, previouslyDetectedBotIps)

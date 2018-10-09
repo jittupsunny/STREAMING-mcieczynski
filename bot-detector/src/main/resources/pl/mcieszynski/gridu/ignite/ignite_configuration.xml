@@ -69,13 +69,29 @@ class="javax.cache.configuration.FactoryBuilder$SingletonFactory">
         <property name="cacheConfiguration">
           <list>
             <bean class="org.apache.ignite.configuration.CacheConfiguration">
+                <property name="name" value="sharedRDD"/>
+                <property name="cacheMode" value="REPLICATED"/>
+                <property name="indexedTypes">
+                  <list>
+                      <value>java.lang.String</value>
+                      <value>pl.mcieszynski.gridu.detector.events.AggregatedIpInformation</value>
+                  </list>
+                </property>
+                <property name="atomicityMode" value="ATOMIC"/>
+                <property name="expiryPolicyFactory">
+                    <bean parent="botsExpiryPolicy"/>
+                </property>
+                <property name="eagerTtl" value="true"/>
+            </bean>
+
+            <bean class="org.apache.ignite.configuration.CacheConfiguration">
                 <property name="name" value="botsRDD"/>
                 <property name="cacheMode" value="REPLICATED"/>
                 <property name="indexedTypes">
-                    <list>
-                        <value>java.lang.String</value>
-                        <value>pl.mcieszynski.gridu.detector.events.IpInformation</value>
-                    </list>
+                  <list>
+                      <value>java.lang.String</value>
+                      <value>pl.mcieszynski.gridu.detector.events.IpInformation</value>
+                  </list>
                 </property>
                 <property name="atomicityMode" value="ATOMIC"/>
                 <property name="expiryPolicyFactory">

@@ -27,11 +27,13 @@ trait DetectorService {
 
   val bootstrapServers = "localhost:9092,localhost:9093,localhost:9094"
 
-  val checkpointDir = "file:////Users/mcieszynski/prg/data/spark/bot-detection-checkpoint"
+  val checkpointDir = "spark-checkpoint"
 
   val expiredEventsPredicate: BaseEvent => Boolean = event => event.timestamp > (System.currentTimeMillis() / 1000) - TIME_WINDOW_LIMIT
 
   case class DetectedBot(ip: String, timestamp: Long, reason: String)
+
+  def runService(args: Array[String])
 
   def simplifyEvents(events: List[Event]): List[SimpleEvent] = {
     events.map(event => simplifyEvent(event))
@@ -71,11 +73,9 @@ trait DetectorService {
       .getOrCreate()
   }
 
-
-  def igniteSetup(sparkSession: SparkSession, configPath: String = "file:////Users/mcieszynski/prg/code/final-project/ignite_configuration.xml") = {
+  def igniteSetup(sparkSession: SparkSession, configPath: String = "pl/mcieszynski/gridu/ignite/ignite_configuration.xml") = {
     new IgniteContext(sparkSession.sparkContext, configPath)
   }
-
 
   def kafkaSetup(): Map[String, Object]
 

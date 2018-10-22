@@ -30,7 +30,7 @@ trait DetectorServiceTestConstants {
   }
 
   def event(timestamp: Long = timestamp, categoryId: Int = categoryId, ip: String = ip, eventType: String = eventType, i: Int = 0): pl.mcieszynski.gridu.detector.events.Event = {
-    Event(UUID.nameUUIDFromBytes((eventJson(timestamp, categoryId, ip, eventType) + i).getBytes), timestamp, categoryId, ip, eventType)
+    Event(UUID.nameUUIDFromBytes((eventJson(timestamp, categoryId, ip, eventType) + i).getBytes).toString, timestamp, categoryId, ip, eventType)
   }
 
 }

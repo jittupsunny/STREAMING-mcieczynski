@@ -41,7 +41,7 @@ object DetectorServiceDStreamIgnite extends DetectorService {
       storeEventsInCassandra(eventsMap)
 
       val botsRDD: IgniteRDD[String, IpInformation] = retrieveIgniteCache(igniteContext, "botsRDD")
-      val eventsRDD: IgniteRDD[UUID, Event] = retrieveIgniteCache(igniteContext, "eventsRDD")
+      val eventsRDD: IgniteRDD[String, Event] = retrieveIgniteCache(igniteContext, "eventsRDD")
 
       val previouslyDetectedBotIps = botsRDD.keys.distinct.collect
 
@@ -52,7 +52,7 @@ object DetectorServiceDStreamIgnite extends DetectorService {
 
       filteredEvents.foreachRDD(rdd => {
         val mergedRDD: RDD[(String, List[Event])] = joinCachedEvents(inMemoryEvents, rdd)
-        val (newBotsRDD: RDD[(String, IpInformation)], otherEventsRDD: RDD[(UUID, Event)]) = splitBotEvents(mergedRDD)
+        val (newBotsRDD: RDD[(String, IpInformation)], otherEventsRDD: RDD[(String, Event)]) = splitBotEvents(mergedRDD)
         botsRDD.savePairs(newBotsRDD)
         eventsRDD.savePairs(otherEventsRDD)
       })

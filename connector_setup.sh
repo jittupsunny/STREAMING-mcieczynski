@@ -1,8 +1,10 @@
-export name="FileStreamSourceConnector2"
-export file="/tmp/botgen/logs/output2.log"
+
+export name="FileStreamSourceConnector3"
+export file="/tmp/botgen/logs/output3.log"
 export topic="events"
 export tasks="3"
 export batch="40000"
+
 
 echo "{\"name\": \"$name\",\"config\": {\"connector.class\": \"org.apache.kafka.connect.file.FileStreamSourceConnector\",\"tasks.max\": \"$tasks\",\"file\": \"$file\",\"topic\": \"$topic\", \"batch.size\":\"$batch\"}}" > FileStreamSourceConnector.json
 

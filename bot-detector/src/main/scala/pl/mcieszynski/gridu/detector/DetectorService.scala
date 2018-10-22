@@ -31,8 +31,6 @@ trait DetectorService {
 
   val expiredEventsPredicate: BaseEvent => Boolean = event => event.timestamp > (System.currentTimeMillis() / 1000) - TIME_WINDOW_LIMIT
 
-  case class DetectedBot(ip: String, timestamp: Long, reason: String)
-
   def runService(args: Array[String])
 
   def simplifyEvents(events: List[Event]): List[SimpleEvent] = {
@@ -49,7 +47,7 @@ trait DetectorService {
     import scala.util.control.NonFatal
     try {
       val jsonMap = parse(jsonEvent).asInstanceOf[JObject].values
-      val event = Event(UUID.nameUUIDFromBytes(kafkaMessageUUID.getBytes()),
+      val event = Event(UUID.nameUUIDFromBytes(kafkaMessageUUID.getBytes()).toString,
         jsonMap("unix_time").asInstanceOf[BigInt].toLong,
         jsonMap("category_id").asInstanceOf[BigInt].toInt,
         jsonMap("ip").asInstanceOf[String],

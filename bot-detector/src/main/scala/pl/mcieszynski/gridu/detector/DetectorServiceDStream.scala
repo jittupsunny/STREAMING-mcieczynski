@@ -9,7 +9,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.kafka010._
-import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, Event}
+import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event}
 
 object DetectorServiceDStream extends DetectorService {
 
@@ -21,6 +21,7 @@ object DetectorServiceDStream extends DetectorService {
       "group.id" -> kafkaGroup,
       "auto.offset.reset" -> "earliest",
       "enable.auto.commit" -> (false: lang.Boolean),
+      "spark.streaming.backpressure.enabled" -> (false: lang.Boolean),
       "spark.streaming.backpressure.initialRate" -> (200000: lang.Integer)
     )
   }

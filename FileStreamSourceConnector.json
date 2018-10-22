@@ -1,1 +1,1 @@
-{"name": "FileStreamSourceConnector2","config": {"connector.class": "org.apache.kafka.connect.file.FileStreamSourceConnector","tasks.max": "3","file": "/tmp/botgen/logs/output2.log","topic": "events", "batch.size":"40000"}}
+{"name": "FileStreamSourceConnector3","config": {"connector.class": "org.apache.kafka.connect.file.FileStreamSourceConnector","tasks.max": "3","file": "/tmp/botgen/logs/output3.log","topic": "events", "batch.size":"40000"}}

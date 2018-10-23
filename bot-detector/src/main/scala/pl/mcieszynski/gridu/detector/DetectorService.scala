@@ -17,9 +17,9 @@ trait DetectorService {
     */
   val TIME_WINDOW_LIMIT: Long = 600 / timeRatio
 
-  val BATCH_DURATION: Long = 60 / timeRatio
+  val BATCH_DURATION: Long = 30 / timeRatio
 
-  val SLIDE_DURATION: Long = 60 / timeRatio
+  val SLIDE_DURATION: Long = 30 / timeRatio
 
   val kafkaTopic = "events"
 

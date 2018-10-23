@@ -7,7 +7,7 @@ import com.datastax.spark.connector._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.streaming.GroupState
+import org.apache.spark.sql.streaming.{GroupState, Trigger}
 import pl.mcieszynski.gridu.detector.DetectorService
 import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event}
 
@@ -33,19 +33,29 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     import sparkSession.implicits._
 
     val kafkaParams = kafkaSetup()
+
     val dataFrame = sparkSession
       .readStream.format("kafka")
       .option("bootstrap.servers", bootstrapServers)
       .option("subscribe", kafkaTopic)
       .option("group.id", kafkaGroup)
-      .option("auto.offset.reset", "earliest")
-      .option("spark.streaming.backpressure.enabled", value = true)
-      .option("spark.streaming.backpressure.initialRate", 200000)
+      .option("rowsPerSecond", 4000)
+      .option("encoding", "UTF-8")
       .load()
-    val result = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
-      .as[(String, String)]
 
-    val eventsMap = result.transform(retrieveEventsDataset)
+    val compositeWriter = new CompositeWriter[(String, String)](Seq())
+
+    val query = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+      .as[(String, String)]
+      .transform(retrieveEventsDataset)
+      .writeStream
+      .option("encoding", "UTF-8")
+      .option("checkpointLocation", checkpointDir)
+      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " seconds"))
+      //.foreach(writer = compositeWriter)
+      .start()
+
+    /*val eventsMap = Map()
 
     storeEventsInCassandra(eventsMap)
 
@@ -59,8 +69,8 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
 
     val detectedBots = findNewBots(statefulIpDataset)
 
-    storeNewBots(detectedBots, sharedRDD)
-
+    storeNewBots(detectedBots, sharedRDD)*/
+    query.awaitTermination
   }
 
 

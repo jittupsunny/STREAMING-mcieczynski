@@ -29,16 +29,16 @@ class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServ
       assert(validEvent == result(0))
     }
 
-    "filterKnownBotEvents" in {
-      val input = List(validEvent,
-        Event(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType))
-        .toDS()
-      val output: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
-
-      val result = DetectorServiceStructured.filterKnownBotEvents(input, Array(botIp)).collect()
-      assert(1 == result.length)
-      assert(validEvent == result(0))
-    }
+//    "filterKnownBotEvents" in {
+//      val input = List(validEvent,
+//        Event(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType))
+//        .toDS()
+//      val output: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
+//
+//      val result = DetectorServiceStructured.filterKnownBotEvents(input, Array(botIp)).collect()
+//      assert(1 == result.length)
+//      assert(validEvent == result(0))
+//    }
   }
 
 }

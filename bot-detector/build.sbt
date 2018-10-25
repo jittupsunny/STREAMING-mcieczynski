@@ -35,8 +35,14 @@ libraryDependencies ++= Seq(
   "com.holdenkarau" %% "spark-testing-base" % "2.3.1_0.10.0" % Test,
   "net.manub" %% "scalatest-embedded-kafka" % "2.0.0" % Test,
   "net.manub" %% "scalatest-embedded-kafka-streams" % "2.0.0" % Test,
-  "org.mockito" % "mockito-all" % "1.10.19" % Test
+  "org.mockito" % "mockito-all" % "1.10.19" % Test,
+  "org.apache.spark" %% "spark-hive" % "2.3.1" % Test,
+  "org.apache.hive" % "hive-exec" % "2.3.1" % Test,
+  "org.pentaho" % "pentaho-aggdesigner-algorithm" % "5.1.5-jhyde" % Test
 )
+
+resolvers += Resolver.mavenLocal
+resolvers += "Cascading repo" at "http://conjars.org/repo"
 
 dependencyOverrides += "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.7"
 dependencyOverrides += "org.apache.kafka" % "kafka-clients" % "2.0.0"

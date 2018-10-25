@@ -1,9 +1,7 @@
 package pl.mcieszynski.gridu.detector.events
 
-import java.util.UUID
-
 trait BaseEvent {
-  def uuid: UUID
+  def uuid: String
 
   def timestamp: Long
 

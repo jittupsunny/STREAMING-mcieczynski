@@ -2,18 +2,14 @@ package pl.mcieszynski.gridu.detector.structured
 
 import java.util.UUID
 
-import com.holdenkarau.spark.testing.StreamingSuiteBase
-import org.apache.spark.sql.SparkSession
+import com.holdenkarau.spark.testing.DatasetSuiteBase
 import org.scalatest.WordSpec
-import pl.mcieszynski.gridu.detector.events.Event
 import pl.mcieszynski.gridu.detector.DetectorServiceTestConstants
+import pl.mcieszynski.gridu.detector.events.Event
 
-class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServiceTestConstants with StreamingSuiteBase {
-  val sparkSession: SparkSession = SparkSession
-    .builder
-    .master("local[*]")
-    .appName("testing")
-    .getOrCreate
+class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServiceTestConstants with DatasetSuiteBase {
+
+  lazy val sparkSession = DetectorServiceStructured.sparkSession
 
   import sparkSession.implicits._
 
@@ -29,16 +25,16 @@ class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServ
       assert(validEvent == result(0))
     }
 
-//    "filterKnownBotEvents" in {
-//      val input = List(validEvent,
-//        Event(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType))
-//        .toDS()
-//      val output: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
-//
-//      val result = DetectorServiceStructured.filterKnownBotEvents(input, Array(botIp)).collect()
-//      assert(1 == result.length)
-//      assert(validEvent == result(0))
-//    }
+    "filterKnownBotEvents" in {
+      val input = List(validEvent,
+        Event(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType))
+        .toDS()
+      val output: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
+
+      val result = DetectorServiceStructured.filterKnownBotEvents(input, Array(botIp)).collect()
+      assert(1 == result.length)
+      assert(validEvent == result(0))
+    }
   }
 
 }

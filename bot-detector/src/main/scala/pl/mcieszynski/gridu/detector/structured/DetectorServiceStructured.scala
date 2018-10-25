@@ -3,7 +3,7 @@ package pl.mcieszynski.gridu.detector.structured
 import java.lang
 import java.util.UUID
 
-import com.datastax.spark.connector._
+import com.datastax.spark.connector.{SomeColumns, _}
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.Dataset
@@ -13,74 +13,70 @@ import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBo
 
 object DetectorServiceStructured extends DetectorService with EventsEncoding {
 
+  val sparkSession = sparkSetup
+
+  import sparkSession.implicits._
+
   def kafkaSetup() = {
-    Map[String, Object](
+    Map[String, String](
       "bootstrap.servers" -> bootstrapServers,
-      "key.deserializer" -> classOf[StringDeserializer],
-      "value.deserializer" -> classOf[StringDeserializer],
+      "key.deserializer" -> classOf[StringDeserializer].getName,
+      "value.deserializer" -> classOf[StringDeserializer].getName,
       "group.id" -> kafkaGroup,
+      "subscribe" -> kafkaTopic,
       "auto.offset.reset" -> "earliest",
-      "enable.auto.commit" -> (false: lang.Boolean),
-      "spark.streaming.backpressure.enabled" -> (true: lang.Boolean),
-      "spark.streaming.backpressure.initialRate" -> (200000: lang.Integer)
+      "rowsPerSecond" -> "4000",
+      "spark.streaming.backpressure.enabled" -> (true: lang.Boolean).toString,
+      "spark.streaming.backpressure.initialRate" -> "200000"
     )
   }
-
   def runService(args: Array[String]) {
-    val sparkSession = sparkSetup
     val igniteContext = igniteSetup(sparkSession)
-
-    import sparkSession.implicits._
 
     val kafkaParams = kafkaSetup()
 
     val dataFrame = sparkSession
       .readStream.format("kafka")
-      .option("bootstrap.servers", bootstrapServers)
-      .option("subscribe", kafkaTopic)
-      .option("group.id", kafkaGroup)
-      .option("rowsPerSecond", 4000)
-      .option("encoding", "UTF-8")
+      .options(kafkaParams)
       .load()
 
     val compositeWriter = new CompositeWriter[(String, String)](Seq())
 
-    val query = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
-      .as[(String, String)]
-      .transform(retrieveEventsDataset)
-      .writeStream
-      .option("encoding", "UTF-8")
-      .option("checkpointLocation", checkpointDir)
-      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " seconds"))
-      //.foreach(writer = compositeWriter)
-      .start()
-
-    /*val eventsMap = Map()
-
-    storeEventsInCassandra(eventsMap)
-
     val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, "sharedRDD")
-
     val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
 
-    val filteredEvents = filterKnownBotEvents(eventsMap, previouslyDetectedBotIps)
 
-    val statefulIpDataset: Dataset[(String, AggregatedIpInformationEncoded)] = groupEventsByIpWithState(filteredEvents)
+    val eventsStream = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+      .as[(String, String)]
+      .transform(retrieveEventsDataset)
+      .filter(event => !previouslyDetectedBotIps.contains(event.ip))
+
+    storeEventsInCassandra(eventsStream)
+
+    val query =
+      eventsStream.writeStream
+        .option("checkpointLocation", checkpointDir)
+        .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " seconds"))
+        //.foreach(writer = compositeWriter)
+        .start()
+
+    val filteredEvents = filterKnownBotEvents(eventsStream, previouslyDetectedBotIps)
+
+    val statefulIpDataset: Dataset[(String, AggregatedIpInformation)] = groupEventsByIpWithState(filteredEvents)
 
     val detectedBots = findNewBots(statefulIpDataset)
 
-    storeNewBots(detectedBots, sharedRDD)*/
+    storeNewBots(detectedBots, sharedRDD)
     query.awaitTermination
   }
 
-
-  def retrieveEventsDataset(kafkaDataset: Dataset[(String, String)]): Dataset[EventEncoded] = {
+  def retrieveEventsDataset(kafkaDataset: Dataset[(String, String)]): Dataset[Event] = {
     kafkaDataset
-      .map(func = recordTuple => toEncoded(eventConversion(recordTuple._1, recordTuple._2)))
+      .map(func = recordTuple => eventConversion(recordTuple._1, recordTuple._2))
       .filter(event => event != null)
   }
 
-  def eventConversion(kafkaMessageUUID: String, jsonEvent: String): EventEncoded = {
+  def eventConversion(kafkaMessageUUID: String, jsonEvent: String): Event = {
     import net.liftweb.json._
 
     import scala.util.control.NonFatal
@@ -100,23 +96,24 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     }
   }
 
-  def storeEventsInCassandra(eventsMap: Dataset[EventEncoded]) = {
+  def storeEventsInCassandra(eventsMap: Dataset[Event]) = {
     eventsMap.rdd.saveToCassandra("bot_detection", "events",
       SomeColumns("uuid", "timestamp", "category_id", "ip", "event_type"))
   }
 
-  def filterKnownBotEvents(eventsStream: Dataset[EventEncoded], previouslyDetectedBotIps: Array[String]): Dataset[EventEncoded] = {
+  def filterKnownBotEvents(eventsStream: Dataset[Event], previouslyDetectedBotIps: Array[String]): Dataset[Event] = {
     eventsStream
       .filter(event => !previouslyDetectedBotIps.contains(event.ip)) // Filter bot-confirmed events from further processing
   }
 
-  def groupEventsByIpWithState(filteredEvents: Dataset[EventEncoded]): Dataset[(String, AggregatedIpInformationEncoded)] = {
+
+  def groupEventsByIpWithState(filteredEvents: Dataset[Event]): Dataset[(String, AggregatedIpInformation)] = {
     filteredEvents
       .groupByKey(event => event.ip)
       .mapGroupsWithState(func = stateMappingFunction)
   }
 
-  def stateMappingFunction(ip: String, newEventsIterator: Iterator[EventEncoded], state: GroupState[AggregatedIpInformation]): (String, AggregatedIpInformationEncoded) = {
+  def stateMappingFunction(ip: String, newEventsIterator: Iterator[Event], state: GroupState[AggregatedIpInformation]): (String, AggregatedIpInformation) = {
     val newEvents = newEventsIterator.toList.map(event => (event.uuid, event.timestamp, event.categoryId, event.eventType))
     val newState: AggregatedIpInformation = state.getOption match {
       case Some(aggregatedData) => {
@@ -130,14 +127,14 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     (ip, toEncoded(newState))
   }
 
-  def findNewBots(statefulIpDataset: Dataset[(String, AggregatedIpInformationEncoded)]): Dataset[(String, AggregatedIpInformationEncoded)] = {
+  def findNewBots(statefulIpDataset: Dataset[(String, AggregatedIpInformation)]): Dataset[(String, AggregatedIpInformation)] = {
     statefulIpDataset
-      .filter(func = (aggregatedIpInformation: (String, AggregatedIpInformationEncoded)) => {
+      .filter(func = (aggregatedIpInformation: (String, AggregatedIpInformation)) => {
         aggregatedIpInformation._2.botDetected.nonEmpty
       })
   }
 
-  def storeNewBots(detectedBots: Dataset[(String, AggregatedIpInformationEncoded)], sharedRDD: IgniteRDD[String, AggregatedIpInformation]) = {
+  def storeNewBots(detectedBots: Dataset[(String, AggregatedIpInformation)], sharedRDD: IgniteRDD[String, AggregatedIpInformation]) = {
     sharedRDD.savePairs(detectedBots.rdd.map(tuple => (tuple._1, fromEncoded(tuple._2))))
     detectedBots
       .map(aggregatedIpInformation =>

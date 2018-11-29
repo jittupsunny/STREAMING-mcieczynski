@@ -3,6 +3,7 @@ package pl.mcieszynski.gridu.detector
 import org.apache.commons.lang3.StringUtils
 import org.scalatest.WordSpec
 import pl.mcieszynski.gridu.detector.DetectorServiceConstants._
+import pl.mcieszynski.gridu.detector.dstream.DetectorServiceDStream
 import pl.mcieszynski.gridu.detector.events.AggregatedIpInformation
 
 class DetectorServiceAggregationSpec extends WordSpec with DetectorServiceTestConstants {

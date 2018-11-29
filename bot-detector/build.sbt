@@ -8,7 +8,7 @@ scalaVersion := "2.11.8"
 
 sparkVersion := "2.3.1"
 
-sparkComponents ++= Seq("sql", "catalyst", "streaming")
+sparkComponents ++= Seq("sql", "catalyst", "streaming","streaming-kafka-0-10","hive")
 
 spDependencies += "datastax/spark-cassandra-connector:2.3.1-s_2.11"
 
@@ -18,12 +18,12 @@ val workaround = {
   ()
 }
 
-
 // Core Dependencies
 libraryDependencies ++= Seq(
-  "org.apache.spark" %% "spark-streaming-kafka-0-10" % "2.3.1",
   "org.apache.ignite" % "ignite-spark" % "2.6.0",
-  "net.liftweb" %% "lift-json" % "2.6-M4"
+  "net.liftweb" %% "lift-json" % "2.6-M4",
+  "org.slf4j" % "slf4j-simple" % "1.7.25",
+  "commons-cli" % "commons-cli" % "1.4"
 )
 
 //Test Dependencies
@@ -36,7 +36,6 @@ libraryDependencies ++= Seq(
   "net.manub" %% "scalatest-embedded-kafka" % "2.0.0" % Test,
   "net.manub" %% "scalatest-embedded-kafka-streams" % "2.0.0" % Test,
   "org.mockito" % "mockito-all" % "1.10.19" % Test,
-  "org.apache.spark" %% "spark-hive" % "2.3.1" % Test,
   "org.apache.hive" % "hive-exec" % "2.3.1" % Test,
   "org.pentaho" % "pentaho-aggdesigner-algorithm" % "5.1.5-jhyde" % Test
 )

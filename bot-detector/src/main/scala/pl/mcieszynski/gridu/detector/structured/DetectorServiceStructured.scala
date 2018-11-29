@@ -3,7 +3,7 @@ package pl.mcieszynski.gridu.detector.structured
 import java.lang
 import java.util.UUID
 
-import com.datastax.spark.connector.{SomeColumns, _}
+import com.datastax.spark.connector._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.Dataset
@@ -30,6 +30,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
       "spark.streaming.backpressure.initialRate" -> "200000"
     )
   }
+
   def runService(args: Array[String]) {
     val igniteContext = igniteSetup(sparkSession)
 
@@ -46,9 +47,11 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
 
 
-    val eventsStream = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+    val eventsDataset = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
       .as[(String, String)]
       .transform(retrieveEventsDataset)
+    val eventsStream = eventsDataset
+      .withWatermark("timestamp", "10 minute")
       .filter(event => !previouslyDetectedBotIps.contains(event.ip))
 
     storeEventsInCassandra(eventsStream)
@@ -56,7 +59,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     val query =
       eventsStream.writeStream
         .option("checkpointLocation", checkpointDir)
-        .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " seconds"))
+        .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
         //.foreach(writer = compositeWriter)
         .start()
 
@@ -117,9 +120,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     val newEvents = newEventsIterator.toList.map(event => (event.uuid, event.timestamp, event.categoryId, event.eventType))
     val newState: AggregatedIpInformation = state.getOption match {
       case Some(aggregatedData) => {
-        val validTimestamp = System.currentTimeMillis() - TIME_WINDOW_LIMIT
-        val noOutdatedEvents = aggregatedData.currentEvents.filter(event => event.timestamp > validTimestamp)
-        AggregatedIpInformation(ip, (noOutdatedEvents ++ newEvents.map(fromEncoded)).distinct)
+        AggregatedIpInformation(ip, (aggregatedData.currentEvents ++ newEvents.map(fromEncoded)).distinct)
       }
       case None => AggregatedIpInformation(ip, newEvents.map(fromEncoded))
     }

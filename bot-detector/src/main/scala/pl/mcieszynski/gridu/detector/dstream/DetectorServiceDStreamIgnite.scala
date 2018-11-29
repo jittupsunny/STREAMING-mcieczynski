@@ -1,16 +1,16 @@
-package pl.mcieszynski.gridu.detector
+package pl.mcieszynski.gridu.detector.dstream
 
 import java.lang
-import java.util.UUID
 
 import com.datastax.spark.connector._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
-import org.apache.spark.streaming.kafka010._
+import org.apache.spark.streaming.kafka010.{ConsumerStrategies, ConsumerStrategy, KafkaUtils, LocationStrategies}
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import pl.mcieszynski.gridu.detector.DetectorService
 import pl.mcieszynski.gridu.detector.events.{Event, IpInformation}
 
 object DetectorServiceDStreamIgnite extends DetectorService {
@@ -31,7 +31,7 @@ object DetectorServiceDStreamIgnite extends DetectorService {
     val sparkSession = sparkSetup
     val igniteContext = igniteSetup(sparkSession)
 
-    val kafkaParams = kafkaSetup
+    val kafkaParams = kafkaSetup()
     val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
 
     val streamingContext = StreamingContext.getOrCreate(checkpointPath = checkpointDir, creatingFunc = () => {
@@ -48,7 +48,11 @@ object DetectorServiceDStreamIgnite extends DetectorService {
       val filteredEvents = filterKnownBotEvents(eventsMap, previouslyDetectedBotIps)
 
       val timestampWindow = System.currentTimeMillis() / 1000 - TIME_WINDOW_LIMIT
-      val inMemoryEvents = eventsRDD.map(pair => pair._2).filter(event => event.timestamp > timestampWindow).map(event => (event.ip, event)).mapValues(event => List(event))
+      val inMemoryEvents = eventsRDD
+        .map(pair => pair._2)
+        .filter(event => event.timestamp > timestampWindow)
+        .map(event => (event.ip, event))
+        .mapValues(event => List(event))
 
       filteredEvents.foreachRDD(rdd => {
         val mergedRDD: RDD[(String, List[Event])] = joinCachedEvents(inMemoryEvents, rdd)
@@ -68,14 +72,16 @@ object DetectorServiceDStreamIgnite extends DetectorService {
 
   def setupContextAndRetrieveDStream(sparkSession: SparkSession, consumerStrategy: ConsumerStrategy[String, String]) = {
     val ssc = new StreamingContext(sparkSession.sparkContext, Seconds(BATCH_DURATION))
-    val kafkaStream = KafkaUtils.createDirectStream(ssc, LocationStrategies.PreferConsistent, consumerStrategy)
+    val kafkaStream = KafkaUtils
+      .createDirectStream(ssc, LocationStrategies.PreferConsistent, consumerStrategy)
       .map(record => (kafkaMessageUUID(record), record.value()))
     (ssc, kafkaStream)
   }
 
 
   def retrieveEventsDStream(kafkaStream: DStream[(String, String)]) = {
-    kafkaStream.map(recordTuple => tryEventConversion(recordTuple._1, recordTuple._2))
+    kafkaStream
+      .map(recordTuple => tryEventConversion(recordTuple._1, recordTuple._2))
       .flatMap(_.right.toOption)
   }
 
@@ -106,10 +112,15 @@ object DetectorServiceDStreamIgnite extends DetectorService {
   }
 
   def splitBotEvents(mergedRDD: RDD[(String, List[Event])]) = {
-    val ipInformationRDD = mergedRDD.map(ipEvents => IpInformation(ipEvents._1, ipEvents._2))
-    val newBotsRDD = ipInformationRDD.filter(ipInformation => ipInformation.botDetected.nonEmpty)
+    val ipInformationRDD = mergedRDD
+      .map(ipEvents => IpInformation(ipEvents._1, ipEvents._2))
+
+    val newBotsRDD = ipInformationRDD
+      .filter(ipInformation => ipInformation.botDetected.nonEmpty)
       .map(ipInformation => (ipInformation.ip, ipInformation))
-    val otherEventsRDD = ipInformationRDD.filter(ipInformation => ipInformation.botDetected.isEmpty)
+
+    val otherEventsRDD = ipInformationRDD
+      .filter(ipInformation => ipInformation.botDetected.isEmpty)
       .flatMap(ipInformation => ipInformation.currentEvents)
       .map(event => (event.uuid, event))
     (newBotsRDD, otherEventsRDD)

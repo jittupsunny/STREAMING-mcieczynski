@@ -7,7 +7,7 @@ import net.manub.embeddedkafka.EmbeddedKafka
 import org.apache.spark.streaming.dstream.DStream
 import org.scalatest.WordSpec
 import pl.mcieszynski.gridu.detector.events.Event
-import pl.mcieszynski.gridu.detector.{DetectorServiceDStream, DetectorServiceTestConstants}
+import pl.mcieszynski.gridu.detector.DetectorServiceTestConstants
 
 class DetectorServiceDStreamOperationsSpec extends WordSpec with DetectorServiceTestConstants with StreamingSuiteBase with EmbeddedKafka {
 

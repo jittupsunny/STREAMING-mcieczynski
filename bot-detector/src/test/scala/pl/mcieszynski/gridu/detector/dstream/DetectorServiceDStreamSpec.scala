@@ -6,26 +6,26 @@ import org.apache.spark.streaming.Seconds
 import org.apache.spark.streaming.kafka010.{ConsumerStrategies, ConsumerStrategy}
 import org.scalatest.mockito.MockitoSugar
 import org.scalatest.{BeforeAndAfterAll, WordSpec}
-import pl.mcieszynski.gridu.detector.DetectorServiceDStream
+import pl.mcieszynski.gridu.detector.dstream
+
 
 class DetectorServiceDStreamSpec extends WordSpec with BeforeAndAfterAll with EmbeddedKafka with MockitoSugar {
-  lazy val sparkSession: SparkSession = SparkSession
-    .builder
-    .master("local[*]")
-    .appName("testing")
-    .getOrCreate
+
   implicit val config: EmbeddedKafkaConfig = EmbeddedKafkaConfig(kafkaPort = 9092, zooKeeperPort = 2181)
 
-
-  val streamingService = DetectorServiceDStream
-
   val kafkaParams = DetectorServiceDStream.kafkaSetup()
-  val topic = pl.mcieszynski.gridu.detector.DetectorServiceDStream.kafkaTopic
+  val topic = dstream.DetectorServiceDStream.kafkaTopic
 
   val consumerStrategy: ConsumerStrategy[String, String] = ConsumerStrategies.Subscribe[String, String](Seq(topic), kafkaParams)
   try {
     EmbeddedKafka.start()(config)
-    "DetectorService" should {
+    lazy val sparkSession: SparkSession = SparkSession
+      .builder
+      .master("local[*]")
+      .appName("testing")
+      .getOrCreate
+    val streamingService = DetectorServiceDStream
+    "DetectorService" ignore  {
       "setup context and create DStream" in {
         withRunningKafka {
           val (ssc, dStream) = streamingService.setupContextAndRetrieveDStream(sparkSession, consumerStrategy)

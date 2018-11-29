@@ -1,4 +1,4 @@
-package pl.mcieszynski.gridu.detector
+package pl.mcieszynski.gridu.detector.dstream
 
 import java.lang
 
@@ -6,9 +6,10 @@ import com.datastax.spark.connector._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.DStream
-import org.apache.spark.streaming.kafka010._
+import org.apache.spark.streaming.kafka010.{ConsumerStrategies, ConsumerStrategy, KafkaUtils, LocationStrategies}
+import org.apache.spark.streaming.{Seconds, State, StateSpec, StreamingContext}
+import pl.mcieszynski.gridu.detector.DetectorService
 import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event}
 
 object DetectorServiceDStream extends DetectorService {

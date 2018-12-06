@@ -9,7 +9,7 @@ import scala.collection.immutable.ListMap
 object MainDetectorService {
 
 
-  val mode = "service-mode"
+  val mode = "serviceMode"
   val modesMap = Map(
     "dstream" -> DetectorServiceDStream,
     "structured" -> DetectorServiceStructured,

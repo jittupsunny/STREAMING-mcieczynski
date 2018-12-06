@@ -27,7 +27,6 @@ object DetectorServiceDStream extends DetectorService {
     )
   }
 
-
   def runService(args: Array[String]) {
     val sparkSession = sparkSetup
     val igniteContext = igniteSetup(sparkSession)
@@ -42,7 +41,7 @@ object DetectorServiceDStream extends DetectorService {
 
       storeEventsInCassandra(eventsMap)
 
-      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, "sharedRDD")
+      val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, igniteDetectedBots)
       val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
 
       val filteredEvents = filterKnownBotEvents(eventsMap, previouslyDetectedBotIps)
@@ -77,7 +76,7 @@ object DetectorServiceDStream extends DetectorService {
 
   def storeEventsInCassandra(eventsMap: DStream[Event]) = {
     eventsMap.foreachRDD(rdd =>
-      rdd.saveToCassandra("bot_detection", "events",
+      rdd.saveToCassandra(cassandraKeyspace, cassandraEvents,
         SomeColumns("uuid", "timestamp", "category_id", "ip", "event_type")))
   }
 
@@ -121,7 +120,7 @@ object DetectorServiceDStream extends DetectorService {
     detectedBots.map(aggregatedIpInformation => DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
       .foreachRDD(rdd => {
         rdd.foreach(println)
-        rdd.saveToCassandra("bot_detection", "detected_bots", AllColumns)
+        rdd.saveToCassandra(cassandraKeyspace, cassandraDetectedBots, AllColumns)
       })
   }
 

@@ -31,6 +31,14 @@ trait DetectorService {
 
   val expiredEventsPredicate: BaseEvent => Boolean = event => event.timestamp > (System.currentTimeMillis() / 1000) - TIME_WINDOW_LIMIT
 
+  val cassandraKeyspace = "bot_detection"
+
+  val cassandraDetectedBots = "detected_bots"
+
+  val cassandraEvents = "events"
+
+  val igniteDetectedBots = "sharedRDD"
+
   def runService(args: Array[String])
 
   def simplifyEvents(events: List[Event]): List[SimpleEvent] = {
@@ -71,7 +79,9 @@ trait DetectorService {
       .getOrCreate()
   }
 
-  def igniteSetup(sparkSession: SparkSession, configPath: String = "pl/mcieszynski/gridu/ignite/ignite_configuration.xml") = {
+  val igniteConfig = "pl/mcieszynski/gridu/ignite/ignite_configuration.xml"
+
+  def igniteSetup(sparkSession: SparkSession, configPath: String = igniteConfig) = {
     new IgniteContext(sparkSession.sparkContext, configPath)
   }
 

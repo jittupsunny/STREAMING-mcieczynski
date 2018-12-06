@@ -3,11 +3,11 @@ package pl.mcieszynski.gridu.detector.structured
 import java.lang
 import java.util.UUID
 
-import com.datastax.spark.connector._
+import org.apache.ignite.spark.IgniteDataFrameSettings._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.streaming.{GroupState, Trigger}
+import org.apache.spark.sql.streaming.{GroupState, OutputMode, Trigger}
 import pl.mcieszynski.gridu.detector.DetectorService
 import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event}
 
@@ -41,36 +41,53 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
       .options(kafkaParams)
       .load()
 
-    val compositeWriter = new CompositeWriter[(String, String)](Seq())
-
-    val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, "sharedRDD")
+    val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, igniteDetectedBots)
     val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
 
 
     val eventsDataset = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
       .as[(String, String)]
       .transform(retrieveEventsDataset)
-    val eventsStream = eventsDataset
+    val allEventsStream = eventsDataset
       .withWatermark("timestamp", "10 minute")
-      .filter(event => !previouslyDetectedBotIps.contains(event.ip))
 
-    storeEventsInCassandra(eventsStream)
+    val cassandraEventsQuery = allEventsStream.writeStream
+      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
+      .option("checkpointLocation", checkpointDir + "/cassandra/events")
+      .format("org.apache.spark.sql.cassandra")
+      .option("keyspace", cassandraKeyspace)
+      .option("table", cassandraEvents)
+      .outputMode(OutputMode.Update)
+      .start()
 
-    val query =
-      eventsStream.writeStream
-        .option("checkpointLocation", checkpointDir)
-        .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
-        //.foreach(writer = compositeWriter)
-        .start()
-
-    val filteredEvents = filterKnownBotEvents(eventsStream, previouslyDetectedBotIps)
-
+    val filteredEvents = filterKnownBotEvents(allEventsStream, previouslyDetectedBotIps)
     val statefulIpDataset: Dataset[(String, AggregatedIpInformation)] = groupEventsByIpWithState(filteredEvents)
-
     val detectedBots = findNewBots(statefulIpDataset)
 
-    storeNewBots(detectedBots, sharedRDD)
-    query.awaitTermination
+    val cassandraBotsQuery = detectedBots
+      .map(aggregatedIpInformation =>
+        DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
+      .writeStream
+      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
+      .option("checkpointLocation", checkpointDir + "/cassandra/detedtedBots")
+      .format("org.apache.spark.sql.cassandra")
+      .option("keyspace", cassandraKeyspace)
+      .option("table", cassandraDetectedBots)
+      .outputMode(OutputMode.Update)
+      .start()
+
+    val igniteBotsQuery = detectedBots
+      .map(tuple => (tuple._1, fromEncoded(tuple._2)))
+      .writeStream
+      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
+      .option("checkpointLocation", checkpointDir + "/ignite/detedtedBots")
+      .format(FORMAT_IGNITE)
+      .option(OPTION_CONFIG_FILE, igniteConfig)
+      .option(OPTION_TABLE, igniteDetectedBots)
+      .outputMode(OutputMode.Update)
+      .start()
+
+    sparkSession.streams.awaitAnyTermination()
   }
 
   def retrieveEventsDataset(kafkaDataset: Dataset[(String, String)]): Dataset[Event] = {
@@ -99,16 +116,10 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     }
   }
 
-  def storeEventsInCassandra(eventsMap: Dataset[Event]) = {
-    eventsMap.rdd.saveToCassandra("bot_detection", "events",
-      SomeColumns("uuid", "timestamp", "category_id", "ip", "event_type"))
-  }
-
   def filterKnownBotEvents(eventsStream: Dataset[Event], previouslyDetectedBotIps: Array[String]): Dataset[Event] = {
     eventsStream
       .filter(event => !previouslyDetectedBotIps.contains(event.ip)) // Filter bot-confirmed events from further processing
   }
-
 
   def groupEventsByIpWithState(filteredEvents: Dataset[Event]): Dataset[(String, AggregatedIpInformation)] = {
     filteredEvents
@@ -134,13 +145,4 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
         aggregatedIpInformation._2.botDetected.nonEmpty
       })
   }
-
-  def storeNewBots(detectedBots: Dataset[(String, AggregatedIpInformation)], sharedRDD: IgniteRDD[String, AggregatedIpInformation]) = {
-    sharedRDD.savePairs(detectedBots.rdd.map(tuple => (tuple._1, fromEncoded(tuple._2))))
-    detectedBots
-      .map(aggregatedIpInformation =>
-        DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
-      .rdd.saveToCassandra("bot_detection", "detected_bots", AllColumns)
-  }
-
 }

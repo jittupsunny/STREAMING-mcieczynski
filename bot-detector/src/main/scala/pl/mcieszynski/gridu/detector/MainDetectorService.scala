@@ -14,7 +14,7 @@ object MainDetectorService {
     "dstream" -> DetectorServiceDStream,
     "structured" -> DetectorServiceStructured,
     "ignite" -> DetectorServiceDStreamIgnite
-  )
+  ).withDefaultValue(DetectorServiceDStream)
 
   val description = "Sets Streaming service to one of chosen modes: "
   val optionsMap = ListMap(
@@ -24,12 +24,12 @@ object MainDetectorService {
   def main(args: Array[String]): Unit = {
     val commandLine = parseCommandLineArgs(args)
     val chosenMode = commandLine.getOptionValue(mode)
-    val detectorService = modesMap.getOrElse(chosenMode, DetectorServiceDStream)
+    val detectorService = modesMap(chosenMode)
     detectorService.runService(args)
   }
 
   def parseCommandLineArgs(args: Array[String]): CommandLine = {
-    val parser = new DefaultParser()
+    val parser = new BasicParser()
     val options = new Options()
     optionsMap.foreach(option => options.addOption(option._2))
 

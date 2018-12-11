@@ -6,11 +6,18 @@ version := "0.1"
 
 scalaVersion := "2.11.8"
 
-sparkVersion := "2.3.1"
+val sparkVersion = "2.3.1"
 
-sparkComponents ++= Seq("sql", "catalyst", "streaming","streaming-kafka-0-10","hive")
+libraryDependencies ++= sparkDependencies ++ testDependencies ++ kafkaDependencies ++ coreDependencies
 
-spDependencies += "datastax/spark-cassandra-connector:2.3.1-s_2.11"
+lazy val sparkDependencies = Seq(
+  "org.apache.spark" %% "spark-sql" % sparkVersion,
+  "org.apache.spark" %% "spark-catalyst" % sparkVersion,
+  "org.apache.spark" %% "spark-streaming" % sparkVersion,
+  "org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion,
+  "org.apache.spark" %% "spark-hive" % sparkVersion,
+  "com.datastax.spark" %% "spark-cassandra-connector" % sparkVersion
+)
 
 // according to known issue: https://github.com/sbt/sbt/issues/3618
 val workaround = {
@@ -19,15 +26,19 @@ val workaround = {
 }
 
 // Core Dependencies
-libraryDependencies ++= Seq(
+lazy val coreDependencies = Seq(
   "org.apache.ignite" % "ignite-spark" % "2.6.0",
   "net.liftweb" %% "lift-json" % "2.6-M4",
-  "org.slf4j" % "slf4j-simple" % "1.7.25",
-  "commons-cli" % "commons-cli" % "1.4"
+  "org.slf4j" % "slf4j-simple" % "1.7.25"
+)
+
+// Kafka dependencies
+lazy val kafkaDependencies = Seq(
+  "org.apache.kafka" % "kafka-clients" % "2.0.0"
 )
 
 //Test Dependencies
-libraryDependencies ++= Seq(
+lazy val testDependencies = Seq(
   "com.typesafe" % "config" % "1.3.2",
   "org.scalatest" %% "scalatest" % "3.0.5" % Test,
   "org.scalamock" %% "scalamock-core" % "3.1.1" % Test,
@@ -51,6 +62,7 @@ assemblyJarName in assembly := s"${name.value.replace(' ', '-')}-${version.value
 assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
 
 assemblyMergeStrategy in assembly := {
+  case "META-INF/services/org.apache.spark.sql.sources.DataSourceRegister" => MergeStrategy.concat
   case m if m.toLowerCase.endsWith("manifest.mf") => MergeStrategy.discard
   case m if m.toLowerCase.matches("meta-inf.*\\.sf$") => MergeStrategy.discard
   case "log4j.properties" => MergeStrategy.discard

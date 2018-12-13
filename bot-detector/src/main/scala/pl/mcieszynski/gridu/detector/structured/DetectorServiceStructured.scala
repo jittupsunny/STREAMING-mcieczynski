@@ -7,7 +7,7 @@ import org.apache.ignite.spark.IgniteDataFrameSettings._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.streaming.{GroupState, OutputMode, Trigger}
+import org.apache.spark.sql.streaming.{OutputMode, Trigger}
 import pl.mcieszynski.gridu.detector.DetectorService
 import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event}
 
@@ -42,7 +42,6 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
       .load()
 
     val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, igniteDetectedBots)
-    val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
 
 
     val eventsDataset = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
@@ -60,7 +59,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
       .outputMode(OutputMode.Update)
       .start()
 
-    val filteredEvents = filterKnownBotEvents(allEventsStream, previouslyDetectedBotIps)
+    val filteredEvents = filterKnownBotEvents(allEventsStream, sharedRDD)
     val statefulIpDataset: Dataset[(String, AggregatedIpInformation)] = groupEventsByIpWithState(filteredEvents)
     val detectedBots = findNewBots(statefulIpDataset)
 
@@ -116,7 +115,8 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     }
   }
 
-  def filterKnownBotEvents(eventsStream: Dataset[Event], previouslyDetectedBotIps: Array[String]): Dataset[Event] = {
+  def filterKnownBotEvents(eventsStream: Dataset[Event], sharedRDD: IgniteRDD[String, AggregatedIpInformation]): Dataset[Event] = {
+    val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
     eventsStream
       .filter(event => !previouslyDetectedBotIps.contains(event.ip)) // Filter bot-confirmed events from further processing
   }
@@ -124,19 +124,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
   def groupEventsByIpWithState(filteredEvents: Dataset[Event]): Dataset[(String, AggregatedIpInformation)] = {
     filteredEvents
       .groupByKey(event => event.ip)
-      .mapGroupsWithState(func = stateMappingFunction)
-  }
-
-  def stateMappingFunction(ip: String, newEventsIterator: Iterator[Event], state: GroupState[AggregatedIpInformation]): (String, AggregatedIpInformation) = {
-    val newEvents = newEventsIterator.toList.map(event => (event.uuid, event.timestamp, event.categoryId, event.eventType))
-    val newState: AggregatedIpInformation = state.getOption match {
-      case Some(aggregatedData) => {
-        AggregatedIpInformation(ip, (aggregatedData.currentEvents ++ newEvents.map(fromEncoded)).distinct)
-      }
-      case None => AggregatedIpInformation(ip, newEvents.map(fromEncoded))
-    }
-    state.update(newState)
-    (ip, toEncoded(newState))
+      .mapGroups((ip, ipEvents) => (ip, AggregatedIpInformation(ip, ipEvents.map(simplifyEvent).toList)))
   }
 
   def findNewBots(statefulIpDataset: Dataset[(String, AggregatedIpInformation)]): Dataset[(String, AggregatedIpInformation)] = {

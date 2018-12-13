@@ -27,9 +27,9 @@ val workaround = {
 
 // Core Dependencies
 lazy val coreDependencies = Seq(
+  "org.slf4j" % "slf4j-simple" % "1.7.25",
   "org.apache.ignite" % "ignite-spark" % "2.6.0",
-  "net.liftweb" %% "lift-json" % "2.6-M4",
-  "org.slf4j" % "slf4j-simple" % "1.7.25"
+  "net.liftweb" %% "lift-json" % "2.6-M4"
 )
 
 // Kafka dependencies
@@ -48,7 +48,8 @@ lazy val testDependencies = Seq(
   "net.manub" %% "scalatest-embedded-kafka-streams" % "2.0.0" % Test,
   "org.mockito" % "mockito-all" % "1.10.19" % Test,
   "org.apache.hive" % "hive-exec" % "2.3.1" % Test,
-  "org.pentaho" % "pentaho-aggdesigner-algorithm" % "5.1.5-jhyde" % Test
+  "org.pentaho" % "pentaho-aggdesigner-algorithm" % "5.1.5-jhyde" % Test,
+  "joda-time" % "joda-time" % "2.10"
 )
 
 resolvers += Resolver.mavenLocal

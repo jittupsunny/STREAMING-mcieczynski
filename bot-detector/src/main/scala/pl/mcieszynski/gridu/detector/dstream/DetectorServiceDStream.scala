@@ -34,7 +34,6 @@ object DetectorServiceDStream extends DetectorService {
     val kafkaParams = kafkaSetup()
     val consumerStrategy = ConsumerStrategies.Subscribe[String, String](Seq(kafkaTopic), kafkaParams)
 
-
     val streamingContext = StreamingContext.getOrCreate(checkpointPath = checkpointDir, creatingFunc = () => {
       val (ssc, kafkaStream) = setupContextAndRetrieveDStream(sparkSession, consumerStrategy)
       val eventsMap = retrieveEventsDStream(kafkaStream)

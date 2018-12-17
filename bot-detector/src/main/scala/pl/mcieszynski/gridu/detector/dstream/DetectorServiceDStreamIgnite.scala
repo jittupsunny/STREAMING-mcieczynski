@@ -5,6 +5,7 @@ import java.lang
 import com.datastax.spark.connector._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.spark.annotation.Experimental
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.streaming.dstream.DStream
@@ -13,6 +14,7 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
 import pl.mcieszynski.gridu.detector.DetectorService
 import pl.mcieszynski.gridu.detector.events.{Event, IpInformation}
 
+@Experimental
 object DetectorServiceDStreamIgnite extends DetectorService {
 
   def kafkaSetup() = {

@@ -15,6 +15,7 @@ lazy val sparkDependencies = Seq(
   "org.apache.spark" %% "spark-catalyst" % sparkVersion,
   "org.apache.spark" %% "spark-streaming" % sparkVersion,
   "org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion,
+  "org.apache.spark" %% "spark-sql-kafka-0-10" % sparkVersion,
   "org.apache.spark" %% "spark-hive" % sparkVersion,
   "com.datastax.spark" %% "spark-cassandra-connector" % sparkVersion
 )
@@ -29,7 +30,8 @@ val workaround = {
 lazy val coreDependencies = Seq(
   "org.slf4j" % "slf4j-simple" % "1.7.25",
   "org.apache.ignite" % "ignite-spark" % "2.6.0",
-  "net.liftweb" %% "lift-json" % "2.6-M4"
+  "net.liftweb" %% "lift-json" % "2.6-M4",
+  "com.datastax.cassandra" % "cassandra-driver-core" % "3.5.1"
 )
 
 // Kafka dependencies
@@ -61,6 +63,8 @@ dependencyOverrides += "org.apache.kafka" % "kafka-clients" % "2.0.0"
 assemblyJarName in assembly := s"${name.value.replace(' ', '-')}-${version.value}.jar"
 
 assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
+
+test in assembly := {}
 
 assemblyMergeStrategy in assembly := {
   case "META-INF/services/org.apache.spark.sql.sources.DataSourceRegister" => MergeStrategy.concat

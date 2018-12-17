@@ -35,7 +35,7 @@ object KafkaEventsGenerator {
   def asits(dt: DateTime) = dt.toDate.getTime
 
   def message(ip: String, eventTime: Long, eventType: String, categoryId: Int) = {
-    val message = JSONObject(Map("ip" -> ip, "unix_time" -> eventTime, "category_id" -> categoryId, "type" -> eventTime))
+    val message = JSONObject(Map("ip" -> ip, "unix_time" -> eventTime, "category_id" -> categoryId, "type" -> eventType))
     message.toString()
   }
 
@@ -79,12 +79,12 @@ object KafkaEventsGenerator {
       for (f: Int <- 1 to freq) {
         val user = users(Random.nextInt(usersNumber))
         val payload = message(user2ip(user), dateTime.minusSeconds(Random.nextInt(60)).toDate.getTime, randomActionUser(), randomContentUser())
-        producer.send(new ProducerRecord[String, String](eventsTopic, payload))
+        producer.send(new ProducerRecord[String, String](eventsTopic, user.toString, payload))
       }
       if (i % BOT_TRANSITION_EVERY_SEC == 0) {
         bots.foreach(bot => {
           val payload = message(bot2ip(bot), dateTime.minusSeconds(Random.nextInt(60)).toDate.getTime, randomActionBot(), randomContentBot())
-          producer.send(new ProducerRecord[String, String](eventsTopic, payload))
+          producer.send(new ProducerRecord[String, String](eventsTopic, i.toString, payload))
         })
       }
       dateTime = dateTime.plusSeconds(NEXT_SECOND)

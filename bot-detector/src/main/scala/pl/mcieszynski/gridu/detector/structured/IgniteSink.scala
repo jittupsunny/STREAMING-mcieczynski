@@ -3,9 +3,11 @@ package pl.mcieszynski.gridu.detector.structured
 import org.apache.ignite.IgniteCache
 import org.apache.ignite.spark.IgniteContext
 import org.apache.spark.SparkContext
+import org.apache.spark.annotation.Experimental
 import org.apache.spark.sql.ForeachWriter
 import pl.mcieszynski.gridu.detector.events.AggregatedIpInformation
 
+@Experimental
 class IgniteSink(sparkContext: SparkContext, ignitePath: String, igniteCacheName: String) extends ForeachWriter[(String, AggregatedIpInformation)] {
   var igniteContext: IgniteContext = _
   var igniteCache: IgniteCache[String, AggregatedIpInformation] = _

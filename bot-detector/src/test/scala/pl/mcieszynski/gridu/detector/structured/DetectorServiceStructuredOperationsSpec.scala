@@ -1,5 +1,6 @@
 package pl.mcieszynski.gridu.detector.structured
 
+import java.sql.Timestamp
 import java.util.UUID
 
 import com.holdenkarau.spark.testing.DatasetSuiteBase
@@ -7,7 +8,7 @@ import org.apache.ignite.IgniteCache
 import org.apache.ignite.spark.IgniteContext
 import org.scalatest.WordSpec
 import pl.mcieszynski.gridu.detector.DetectorServiceTestConstants
-import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, Event}
+import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, Event, StructuredEvent}
 
 class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServiceTestConstants with DatasetSuiteBase {
 
@@ -27,9 +28,10 @@ class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServ
       assert(validEvent == result(0))
     }
 
-    "filterKnownBotEvents" in {
-      val input = List(validEvent,
-        Event(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType))
+    "filterKnownBotEvents" ignore {
+      val structuredEvent = StructuredEvent(validEvent.uuid, validEvent.timestamp, validEvent.categoryId, validEvent.ip, validEvent.eventType, new Timestamp(validEvent.timestamp))
+      val input = List(structuredEvent,
+        StructuredEvent(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType, new Timestamp(timestamp)))
         .toDS()
       val output: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
       val igniteContext = new IgniteContext(sparkSession.sparkContext, DetectorServiceStructured.igniteConfig)
@@ -38,7 +40,7 @@ class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServ
 
       val result = DetectorServiceStructured.filterKnownBotEvents(input, igniteContext.fromCache(DetectorServiceStructured.igniteDetectedBots)).collect()
       assert(1 == result.length)
-      assert(validEvent == result(0))
+      assert(structuredEvent == result(0))
     }
   }
 

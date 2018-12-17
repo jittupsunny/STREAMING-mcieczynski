@@ -5,7 +5,7 @@ import java.util.UUID
 import org.apache.ignite.spark.{IgniteContext, IgniteRDD}
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.spark.sql.SparkSession
-import pl.mcieszynski.gridu.detector.events.{BaseEvent, Event, InvalidEvent, SimpleEvent}
+import pl.mcieszynski.gridu.detector.events._
 
 import scala.util.{Either, Left, Right}
 
@@ -63,7 +63,7 @@ trait DetectorService {
       Right(event)
     } catch {
       case NonFatal(exception: Exception) => {
-        println("Invalid event:", jsonEvent, exception)
+        println("Invalid event: ", jsonEvent, exception)
         Left(InvalidEvent(jsonEvent, exception))
       }
     }

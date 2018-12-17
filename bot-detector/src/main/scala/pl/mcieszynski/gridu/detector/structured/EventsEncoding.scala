@@ -1,6 +1,8 @@
 package pl.mcieszynski.gridu.detector.structured
 
-import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event, SimpleEvent}
+import java.sql.Timestamp
+
+import pl.mcieszynski.gridu.detector.events._
 
 trait EventsEncoding {
 
@@ -29,5 +31,11 @@ trait EventsEncoding {
   implicit def toEncoded(detectedBot: DetectedBot): DetectedBotEncoded = (detectedBot.ip, detectedBot.timestamp, detectedBot.reason)
 
   implicit def fromEncoded(encoded: DetectedBotEncoded): DetectedBot = DetectedBot(encoded._1, encoded._2, encoded._3)
+
+  type StructuredEventEncoded = (String, Long, Int, String, String, Long)
+
+  implicit def toEncoded(structuredEvent: StructuredEvent): StructuredEventEncoded = (structuredEvent.uuid, structuredEvent.timestamp, structuredEvent.categoryId, structuredEvent.ip, structuredEvent.eventType, structuredEvent.structuredTimestamp.getTime)
+
+  implicit def fromEncoded(encoded: StructuredEventEncoded): StructuredEvent = StructuredEvent(encoded._1, encoded._2, encoded._3, encoded._4, encoded._5, new Timestamp(encoded._6))
 
 }

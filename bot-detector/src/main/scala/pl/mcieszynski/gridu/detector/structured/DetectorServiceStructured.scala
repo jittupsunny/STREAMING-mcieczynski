@@ -1,15 +1,14 @@
 package pl.mcieszynski.gridu.detector.structured
 
 import java.lang
+import java.sql.Timestamp
 import java.util.UUID
 
-import org.apache.ignite.spark.IgniteDataFrameSettings._
 import org.apache.ignite.spark.IgniteRDD
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.streaming.{OutputMode, Trigger}
 import pl.mcieszynski.gridu.detector.DetectorService
-import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBot, Event}
+import pl.mcieszynski.gridu.detector.events._
 
 object DetectorServiceStructured extends DetectorService with EventsEncoding {
 
@@ -19,7 +18,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
 
   def kafkaSetup() = {
     Map[String, String](
-      "bootstrap.servers" -> bootstrapServers,
+      "kafka.bootstrap.servers" -> bootstrapServers,
       "key.deserializer" -> classOf[StringDeserializer].getName,
       "value.deserializer" -> classOf[StringDeserializer].getName,
       "group.id" -> kafkaGroup,
@@ -32,7 +31,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
   }
 
   def runService(args: Array[String]) {
-    val igniteContext = igniteSetup(sparkSession)
+    //val igniteContext = igniteSetup(sparkSession)
 
     val kafkaParams = kafkaSetup()
 
@@ -41,49 +40,42 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
       .options(kafkaParams)
       .load()
 
-    val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, igniteDetectedBots)
-
+    //val sharedRDD: IgniteRDD[String, AggregatedIpInformation] = retrieveIgniteCache(igniteContext, igniteDetectedBots)
 
     val eventsDataset = dataFrame.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
       .as[(String, String)]
       .transform(retrieveEventsDataset)
-    val allEventsStream = eventsDataset
-      .withWatermark("timestamp", "10 minute")
 
-    val cassandraEventsQuery = allEventsStream.writeStream
-      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
+    val cassandraEventsQuery = eventsDataset.writeStream
+      //.trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
       .option("checkpointLocation", checkpointDir + "/cassandra/events")
-      .format("org.apache.spark.sql.cassandra")
-      .option("keyspace", cassandraKeyspace)
-      .option("table", cassandraEvents)
-      .outputMode(OutputMode.Update)
+      .foreach(new CassandraEventsSink(sparkSession.sparkContext.getConf))
       .start()
 
-    val filteredEvents = filterKnownBotEvents(allEventsStream, sharedRDD)
-    val statefulIpDataset: Dataset[(String, AggregatedIpInformation)] = groupEventsByIpWithState(filteredEvents)
-    val detectedBots = findNewBots(statefulIpDataset)
+    val allEventsStream = eventsDataset
+      .map(event => StructuredEvent(event.uuid, event.timestamp, event.categoryId, event.ip, event.eventType, new Timestamp(event.timestamp)))
+      .withWatermark("structuredTimestamp", "10 minute")
+
+    //val filteredEvents = filterKnownBotEvents(allEventsStream, sharedRDD)
+    val groupedEvents: Dataset[(String, AggregatedIpInformation)] = groupEventsByIpWithState(allEventsStream)
+    val detectedBots = findNewBots(groupedEvents)
+
+    /*val igniteBotsQuery = detectedBots
+      .map(tuple => (tuple._1, fromEncoded(tuple._2)))
+      .writeStream
+      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
+      .option("checkpointLocation", checkpointDir + "/ignite/detedtedBots")
+      .foreach(new IgniteSink())
+      .outputMode(OutputMode.Update)
+      .start()*/
 
     val cassandraBotsQuery = detectedBots
       .map(aggregatedIpInformation =>
         DetectedBot(aggregatedIpInformation._1, System.currentTimeMillis(), aggregatedIpInformation._2.botDetected.get))
       .writeStream
-      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
+      //.trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
       .option("checkpointLocation", checkpointDir + "/cassandra/detedtedBots")
-      .format("org.apache.spark.sql.cassandra")
-      .option("keyspace", cassandraKeyspace)
-      .option("table", cassandraDetectedBots)
-      .outputMode(OutputMode.Update)
-      .start()
-
-    val igniteBotsQuery = detectedBots
-      .map(tuple => (tuple._1, fromEncoded(tuple._2)))
-      .writeStream
-      .trigger(Trigger.ProcessingTime(SLIDE_DURATION + " second"))
-      .option("checkpointLocation", checkpointDir + "/ignite/detedtedBots")
-      .format(FORMAT_IGNITE)
-      .option(OPTION_CONFIG_FILE, igniteConfig)
-      .option(OPTION_TABLE, igniteDetectedBots)
-      .outputMode(OutputMode.Update)
+      .foreach(new CassandraBotsSink(sparkSession.sparkContext.getConf))
       .start()
 
     sparkSession.streams.awaitAnyTermination()
@@ -115,16 +107,16 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
     }
   }
 
-  def filterKnownBotEvents(eventsStream: Dataset[Event], sharedRDD: IgniteRDD[String, AggregatedIpInformation]): Dataset[Event] = {
+  def filterKnownBotEvents(eventsStream: Dataset[StructuredEvent], sharedRDD: IgniteRDD[String, AggregatedIpInformation]): Dataset[StructuredEvent] = {
     val previouslyDetectedBotIps = sharedRDD.keys.distinct.collect
     eventsStream
       .filter(event => !previouslyDetectedBotIps.contains(event.ip)) // Filter bot-confirmed events from further processing
   }
 
-  def groupEventsByIpWithState(filteredEvents: Dataset[Event]): Dataset[(String, AggregatedIpInformation)] = {
+  def groupEventsByIpWithState(filteredEvents: Dataset[StructuredEvent]): Dataset[(String, AggregatedIpInformation)] = {
     filteredEvents
       .groupByKey(event => event.ip)
-      .mapGroups((ip, ipEvents) => (ip, AggregatedIpInformation(ip, ipEvents.map(simplifyEvent).toList)))
+      .mapGroups((ip, ipEvents) => (ip, AggregatedIpInformation(ip, ipEvents.map(simplifyStructuredEvent).toList)))
   }
 
   def findNewBots(statefulIpDataset: Dataset[(String, AggregatedIpInformation)]): Dataset[(String, AggregatedIpInformation)] = {
@@ -133,4 +125,13 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
         aggregatedIpInformation._2.botDetected.nonEmpty
       })
   }
+
+  def simplifyStructuredEvents(events: List[StructuredEvent]): List[SimpleEvent] = {
+    events.map(event => simplifyStructuredEvent(event))
+  }
+
+  def simplifyStructuredEvent(event: StructuredEvent): SimpleEvent = {
+    SimpleEvent(event.uuid, event.timestamp, event.categoryId, event.eventType)
+  }
+
 }

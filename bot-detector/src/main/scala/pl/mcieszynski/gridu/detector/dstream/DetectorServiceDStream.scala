@@ -14,6 +14,8 @@ import pl.mcieszynski.gridu.detector.events.{AggregatedIpInformation, DetectedBo
 
 object DetectorServiceDStream extends DetectorService {
 
+  val sparkSession = sparkSetup
+
   def kafkaSetup() = {
     Map[String, Object](
       "bootstrap.servers" -> bootstrapServers,
@@ -45,7 +47,7 @@ object DetectorServiceDStream extends DetectorService {
 
       val filteredEvents = filterKnownBotEvents(eventsMap, previouslyDetectedBotIps)
 
-      val eventsWithinTheWindow = reduceEventsInWindow(filteredEvents, previouslyDetectedBotIps)
+      val eventsWithinTheWindow = reduceEventsInWindow(filteredEvents)
 
       val detectedBots = findNewBotsInWindow(eventsWithinTheWindow)
 
@@ -86,9 +88,9 @@ object DetectorServiceDStream extends DetectorService {
       .mapValues(event => List(event))
   }
 
-  def reduceEventsInWindow(eventsMap: DStream[(String, List[Event])], previouslyDetectedBotIps: Array[String]): DStream[(String, List[Event])] = {
+  def reduceEventsInWindow(eventsMap: DStream[(String, List[Event])]): DStream[(String, List[Event])] = {
     eventsMap.reduceByKeyAndWindow((events, otherEvents) => (events ++ otherEvents).distinct,
-      (events, otherEvents) => events,
+      (events, otherEvents) => events.filter(event => !otherEvents.contains(event)),
       Seconds(TIME_WINDOW_LIMIT), Seconds(SLIDE_DURATION))
   }
 
@@ -96,10 +98,15 @@ object DetectorServiceDStream extends DetectorService {
     (ip: String, newEventsOpt: Option[List[Event]], aggregatedIpInformation: State[AggregatedIpInformation]) => {
       val newEvents = newEventsOpt.getOrElse(List.empty[Event])
       val newAggregatedIpInformation = AggregatedIpInformation(ip, newEvents.map(simplifyEvent))
+      val validTimeLimit = System.currentTimeMillis() - TIME_WINDOW_LIMIT * 1000;
       aggregatedIpInformation.update(
         aggregatedIpInformation.getOption() match {
           case Some(aggregatedData) => {
-            AggregatedIpInformation(ip, (aggregatedData.currentEvents ++ newAggregatedIpInformation.currentEvents).distinct)
+            val information = AggregatedIpInformation(ip, (aggregatedData.currentEvents.filter(event => event.timestamp > validTimeLimit) ++ newAggregatedIpInformation.currentEvents).distinct)
+            //            println("OLD", aggregatedData.currentEvents)
+            //            println("FILTERED", aggregatedData.currentEvents.filter(event => event.timestamp > validTimeLimit))
+            //            println("NEW", newAggregatedIpInformation.currentEvents)
+            information
           }
           case None => newAggregatedIpInformation
         }

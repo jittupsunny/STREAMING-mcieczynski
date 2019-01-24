@@ -10,25 +10,22 @@ class DetectorServiceAggregationSpec extends WordSpec with DetectorServiceTestCo
 
   "EventsAggregator" should {
     "recognizeTooManyCategories" in {
-      val input = List.range(0, BOT_DETECTION_THRESHOLD + 1)
-        .map(i => event((timestamp + i).toLong, categoryId + i, ip, eventType = if (i % 2 == 0) click else view))
-      val output = AggregatedIpInformation(ip, input.map(DetectorServiceDStream.simplifyEvent))
+      val input = categoriesBot(botIp)
+      val output = AggregatedIpInformation(botIp, input.map(DetectorServiceDStream.simplifyEvent))
 
       assert(output.botDetected.getOrElse(StringUtils.EMPTY) == CATEGORIES)
     }
 
     "recognizeTooManyRequests" in {
-      val input = List.range(0, REQUEST_LIMIT + 1)
-        .map(i => event((timestamp + i % 4 + 1).toLong, categoryId + i % 2, ip, eventType = if (i % 2 == 0) click else view, i))
-      val output = AggregatedIpInformation(ip, input.map(DetectorServiceDStream.simplifyEvent))
+      val input = requestsBot(botIp)
+      val output = AggregatedIpInformation(botIp, input.map(DetectorServiceDStream.simplifyEvent))
 
       assert(output.botDetected.getOrElse(StringUtils.EMPTY) == REQUESTS)
     }
 
     "recognizeTooHighClickRatio" in {
-      val input = List.range(0, BOT_DETECTION_THRESHOLD + 1)
-        .map(i => event((timestamp + i).toLong, categoryId + i % 2, ip, eventType = if (i % (BOT_RATIO_LIMIT * 2) > 0) click else view))
-      val output = AggregatedIpInformation(ip, input.map(DetectorServiceDStream.simplifyEvent))
+      val input = ratioBot(botIp)
+      val output = AggregatedIpInformation(botIp, input.map(DetectorServiceDStream.simplifyEvent))
 
       assert(output.botDetected.getOrElse(StringUtils.EMPTY) == RATIO)
     }
@@ -40,7 +37,22 @@ class DetectorServiceAggregationSpec extends WordSpec with DetectorServiceTestCo
 
       assert(output.botDetected.getOrElse(StringUtils.EMPTY) == RATIO)
     }
-  }
 
+    "splitUserFromBots" in {
+      val userIp = ip;
+      val user1 = user(userIp)
+
+      val bot1Ip = "127.20.13.1"
+      val bot2Ip = "127.20.13.2"
+      val bot1 = ratioBot(bot1Ip)
+      val bot2 = categoriesBot(bot2Ip)
+
+      val eventsByIpList = List(AggregatedIpInformation(userIp, user1.map(DetectorServiceDStream.simplifyEvent)),
+        AggregatedIpInformation(bot1Ip, bot1.map(DetectorServiceDStream.simplifyEvent)),
+        AggregatedIpInformation(bot2Ip, bot2.map(DetectorServiceDStream.simplifyEvent)))
+
+      assert(2 == eventsByIpList.count(ipInformation => ipInformation.botDetected.nonEmpty))
+    }
+  }
 
 }

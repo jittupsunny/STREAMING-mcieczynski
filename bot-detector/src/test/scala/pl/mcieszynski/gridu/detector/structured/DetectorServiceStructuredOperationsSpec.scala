@@ -42,6 +42,46 @@ class DetectorServiceStructuredOperationsSpec extends WordSpec with DetectorServ
       assert(1 == result.length)
       assert(structuredEvent == result(0))
     }
-  }
 
+    "groupEventsByIp" in {
+      val botEvents = ratioBot(botIp)
+      val userEvents = user(ip)
+      val expectedMap: Map[String, List[String]] = Map((botIp, botEvents.map(event => event.uuid)), (ip, userEvents.map(event => event.uuid)))
+
+
+      val input = (userEvents ++ botEvents).map(DetectorServiceStructured.convertToStructuredEvent)
+      val inputDS = input.toDS()
+
+      val result = DetectorServiceStructured.groupEventsByIpWithState(inputDS)
+      val tuples = result.take(10)
+      assert(expectedMap.size == tuples.length)
+      tuples.foreach(ipInformation => {
+        assert(expectedMap.contains(ipInformation._1))
+        val eventsUuids = expectedMap(ipInformation._1)
+        val ipUuids = ipInformation._2.currentEvents.map(event => event.uuid)
+        assert(ipUuids.forall(eventsUuids.contains))
+        assert(eventsUuids.forall(ipUuids.contains))
+        //        ipUuids.foreach(uuid => {
+        //          println(if (eventsUuids.contains(uuid)) "OK: " else "MISSING: ", uuid)
+        //        })
+      })
+    }
+
+    "findNewBots" in {
+      val botEvents = ratioBot(botIp)
+      val userEvents = user(ip)
+      val expectedMap: Map[String, List[String]] = Map((botIp, botEvents.map(event => event.uuid)), (ip, userEvents.map(event => event.uuid)))
+
+
+      val input = (userEvents ++ botEvents).map(DetectorServiceStructured.convertToStructuredEvent)
+      val inputDS = input.toDS()
+      val groupedEvents = DetectorServiceStructured.groupEventsByIpWithState(inputDS)
+
+      val result = DetectorServiceStructured.findNewBots(groupedEvents)
+
+      val tuple = result.take(10)
+      assert(1 == tuple.length)
+      assert(tuple(0)._2.botDetected.nonEmpty)
+    }
+  }
 }

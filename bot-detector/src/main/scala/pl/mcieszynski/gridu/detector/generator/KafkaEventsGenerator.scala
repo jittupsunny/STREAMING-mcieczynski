@@ -79,11 +79,13 @@ object KafkaEventsGenerator {
       for (f: Int <- 1 to freq) {
         val user = users(Random.nextInt(usersNumber))
         val payload = message(user2ip(user), dateTime.minusSeconds(Random.nextInt(60)).toDate.getTime, randomActionUser(), randomContentUser())
+        println(payload)
         producer.send(new ProducerRecord[String, String](eventsTopic, user.toString, payload))
       }
       if (i % BOT_TRANSITION_EVERY_SEC == 0) {
         bots.foreach(bot => {
           val payload = message(bot2ip(bot), dateTime.minusSeconds(Random.nextInt(60)).toDate.getTime, randomActionBot(), randomContentBot())
+          println(payload)
           producer.send(new ProducerRecord[String, String](eventsTopic, i.toString, payload))
         })
       }

@@ -1,6 +1,6 @@
 package pl.mcieszynski.gridu.detector.events
 
-trait BaseEvent {
+trait BaseEvent extends Serializable {
   def uuid: String
 
   def timestamp: Long

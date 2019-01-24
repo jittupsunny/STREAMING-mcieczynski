@@ -53,7 +53,7 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
       .start()
 
     val allEventsStream = eventsDataset
-      .map(event => StructuredEvent(event.uuid, event.timestamp, event.categoryId, event.ip, event.eventType, new Timestamp(event.timestamp)))
+      .map(convertToStructuredEvent)
       .withWatermark("structuredTimestamp", "10 minute")
 
     //val filteredEvents = filterKnownBotEvents(allEventsStream, sharedRDD)
@@ -132,6 +132,10 @@ object DetectorServiceStructured extends DetectorService with EventsEncoding {
 
   def simplifyStructuredEvent(event: StructuredEvent): SimpleEvent = {
     SimpleEvent(event.uuid, event.timestamp, event.categoryId, event.eventType)
+  }
+
+  def convertToStructuredEvent: Event => StructuredEvent = {
+    event => StructuredEvent(event.uuid, event.timestamp, event.categoryId, event.ip, event.eventType, new Timestamp(event.timestamp))
   }
 
 }

@@ -28,10 +28,12 @@ val workaround = {
 
 // Core Dependencies
 lazy val coreDependencies = Seq(
-  "org.slf4j" % "slf4j-simple" % "1.7.25",
+  "org.apache.logging.log4j" % "log4j-core" % "2.11.1",
+  "org.apache.logging.log4j" % "log4j-api" % "2.11.1",
+  "org.apache.logging.log4j" % "log4j-slf4j-impl" % "2.11.1",
   "org.apache.ignite" % "ignite-spark" % "2.6.0",
-  "net.liftweb" %% "lift-json" % "2.6-M4",
-  "com.datastax.cassandra" % "cassandra-driver-core" % "3.5.1"
+  "net.liftweb" %% "lift-json" % "2.6-M4"
+  //"com.datastax.cassandra" % "cassandra-driver-core" % "3.5.1"
 )
 
 // Kafka dependencies

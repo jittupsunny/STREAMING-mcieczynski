@@ -18,42 +18,44 @@ class DetectorServiceDStreamOperationsSpec extends WordSpec with DetectorService
       val invalidRecord = ("1", "Invalid kafka stream entry")
       val validRecord = (kafkaMessageUUID, validEventJson)
       val input = List(List(invalidRecord, validRecord))
-      val output = List(List(validEvent))
-      testOperation(input, DetectorServiceDStream.retrieveEventsDStream, output, ordered = true)
+      val expectedOutput = List(List(validEvent))
+      testOperation(input, DetectorServiceDStream.retrieveEventsDStream, expectedOutput, ordered = true)
     }
 
     "reduceEventsInWindow" in {
       val userEvents = user(ip)
       val input: List[List[(String, List[Event])]] = List(userEvents.map(event => (event.ip, List(event))))
-      val output: List[List[(String, List[Event])]] = List(List((ip, userEvents)))
+      val expectedOutput: List[List[(String, List[Event])]] = List(List((ip, userEvents)))
 
-      testOperation(input, reduceEventsInWindow, output, ordered = false)
+      testOperation(input, reduceEventsInWindow, expectedOutput, ordered = false)
     }
 
     "filterKnownBotEvents" in {
       val input: List[List[Event]] = List(List(validEvent),
         List(Event(UUID.nameUUIDFromBytes((1 + kafkaMessageUUID).getBytes).toString, timestamp, categoryId, botIp, eventType)))
-      val output: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
+      val expectedOutput: List[List[(String, List[Event])]] = List(List((ip, List(validEvent))), List())
 
       def internalMethod(stream: DStream[Event]): DStream[(String, List[Event])] = {
         DetectorServiceDStream.filterKnownBotEvents(stream, Array(botIp))
       }
 
-      testOperation(input, internalMethod, output, ordered = true)
+      testOperation(input, internalMethod, expectedOutput, ordered = true)
     }
 
     "filterNewBots" in {
       val userList = List((ip, user(ip)))
       val bot2Ip = "172.20.14.247"
-      val bot1Events = categoriesBot(botIp)
+      val bot1Events = categoriesBot(botIp) // 172.20.13.247
       val bot2Events = ratioBot(bot2Ip)
       val botsList = List((botIp, bot1Events), (bot2Ip, bot2Events))
       val input: List[List[(String, List[Event])]] = List(userList ++ botsList)
 
-      val output: List[List[(String, AggregatedIpInformation)]] = List(List((botIp, AggregatedIpInformation(botIp, bot1Events.map(DetectorServiceDStream.simplifyEvent))),
-        (bot2Ip, AggregatedIpInformation(bot2Ip, bot2Events.map(DetectorServiceDStream.simplifyEvent)))))
+      val expectedOutput: List[List[(String, AggregatedIpInformation)]] = List(List(
+        (botIp, AggregatedIpInformation(botIp, bot1Events.map(DetectorServiceDStream.simplifyEvent))),
+        (botIp, AggregatedIpInformation(bot2Ip, bot2Events.map(DetectorServiceDStream.simplifyEvent)))
+      ))
 
-      testOperation(input, DetectorServiceDStream.findNewBotsInWindow, output, ordered = false)
+      testOperation(input, DetectorServiceDStream.findNewBotsInWindow, expectedOutput, ordered = false)
     }
   }
 
